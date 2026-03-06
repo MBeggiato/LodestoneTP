@@ -1,0 +1,130 @@
+# ============================================================
+# LodestoneTP Configuration
+# ============================================================
+# This file controls all aspects of the LodestoneTP plugin.
+# Changes can be applied in-game with: /lodestonetp reload
+# or via the Admin GUI: /lodestonetp admin
+# ============================================================
+
+# ------------------------------------------------------------
+# Teleport Cooldown
+# ------------------------------------------------------------
+# Prevents spam-teleporting by enforcing a delay between uses.
+# Players with lodestonetp.admin bypass the cooldown.
+cooldown:
+  enabled: true
+  seconds: 10 # Delay in seconds between teleports (minimum: 0)
+
+# ------------------------------------------------------------
+# Teleport Warmup / Channeling
+# ------------------------------------------------------------
+# Optional delay before teleport starts. Moving cancels warmup.
+warmup:
+  enabled: true
+  seconds: 3
+  cancel-on-move: true
+  bypass-permission: lodestonetp.warmup.bypass
+  cancel-message: "Teleport canceled because you moved."
+  cancel-sound: block.note_block.bass
+
+# ------------------------------------------------------------
+# Teleport Cost
+# ------------------------------------------------------------
+# Charge players for each teleport. Three modes available:
+#   xp_levels - deduct XP levels
+#   item      - consume an item from inventory
+#   distance  - scale cost by distance between teleporters
+# Players with lodestonetp.admin bypass all costs.
+cost:
+  enabled: false
+  type: xp_levels # Options: xp_levels, item, distance
+
+  # --- XP Levels Mode ---
+  # Flat cost in experience levels per teleport.
+  xp-levels: 3
+
+  # --- Item Mode ---
+  # Consumes a specific item from the player's inventory.
+  # Use any valid Bukkit Material name (e.g. ENDER_PEARL, DIAMOND, GOLD_INGOT).
+  item:
+    material: ENDER_PEARL
+    amount: 1
+
+  # --- Distance Mode ---
+  # Cost scales with block distance between source and destination.
+  # Define tiers from shortest to longest distance.
+  distance:
+    currency: xp_levels # What to charge: xp_levels or item (uses item settings above)
+    cross-world-cost: 10 # Flat cost when teleporting between different worlds
+
+    # Tiers are checked in order. First matching tier is used.
+    # max-distance: -1 means "everything beyond" (catch-all).
+    #
+    # Example: Vanilla-friendly SMP tiers
+    #   0-1000 blocks    = free (local travel)
+    #   1001-5000 blocks = 3 levels (regional travel)
+    #   5001+ blocks     = 8 levels (cross-map travel)
+    tiers:
+      - max-distance: 1000
+        cost: 0
+      - max-distance: 5000
+        cost: 3
+      - max-distance: -1
+        cost: 8
+
+# ------------------------------------------------------------
+# Default Visibility
+# ------------------------------------------------------------
+# Controls whether newly created teleporters are public or private.
+#   true  = visible and usable by all players
+#   false = only the owner and whitelisted players can see/use it
+defaults:
+  public: true
+
+# ------------------------------------------------------------
+# Teleport Effects
+# ------------------------------------------------------------
+# Visual and audio effects for teleportation and teleporter blocks.
+effects:
+  enabled: true # Master toggle — disables ALL effects when false
+  sounds: true # Play sound effects on teleport departure/arrival
+  particles:
+    enabled: true # Show particle effects on teleport departure/arrival
+    intensity: normal # Particle intensity: low, normal, high (affects warmup ring and burst effects)
+
+  # --- Ambient Effects ---
+  # Persistent effects at active teleporter locations (like nether portals).
+  # Includes a beacon-like hum and floating particles.
+  ambient:
+    enabled: true # Play ambient sound at teleporter locations
+    particles: true # Show ambient particles (END_ROD + REVERSE_PORTAL)
+    volume: 0.4 # Sound volume (0.0 = silent, 1.0 = full volume)
+    range: 8.0 # How far away players can hear/see effects (in blocks, 1-64)
+    interval-ticks: 80 # Ticks between ambient cycles (20 ticks = 1 second, 80 = 4 seconds)
+
+  # --- Light Emission ---
+  # Places an invisible light block above the teleporter structure.
+  # Gives active teleporters a soft glow. The light block is at y+2
+  # (above the top polished blackstone brick). Removed on destruction.
+  light:
+    enabled: true # Place light blocks above active teleporters
+    level: 10 # Light level (0-15, where 15 = max brightness like glowstone)
+
+  # --- Structure Hologram ---
+  # Shows a preview of the required multiblock structure when left-clicking a Lodestone.
+  # Displays transparent block previews and instruction labels.
+  # Useful for teaching players how to build teleporters.
+  structure-hologram:
+    enabled: true # Show hologram preview when left-clicking Lodestone
+
+# ------------------------------------------------------------
+# Creation Fee
+# ------------------------------------------------------------
+# Require players to hold and spend an item to create a teleporter.
+# The player must right-click the lodestone while holding the required
+# item in their main hand. The item is consumed on successful creation.
+# Players with lodestonetp.admin bypass the creation fee.
+creation-fee:
+  enabled: true
+  material: ENDER_PEARL # Any valid Bukkit Material name
+  amount: 1 # How many of the item are consumed (1-64)

@@ -1,0 +1,34 @@
+# Build output
+build/
+out/
+
+# Gradle
+.gradle/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.eclipse/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime
+run/
+
+# Gradle wrapper binary
+bin/
+
+# Test server
+server/
+
+# Wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Project todos (local planning)
+.todo/

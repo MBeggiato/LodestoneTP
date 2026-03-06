@@ -1,0 +1,27 @@
+lodestonetp.use:
+  description: Allows using teleporters to travel
+  default: true
+
+lodestonetp.create:
+  description: Allows creating new teleporters
+  default: op
+
+lodestonetp.manage_cooldowns:
+  description: Allows setting per-teleporter cooldown overrides
+  default: op
+
+lodestonetp.manage_networks:
+  description: Allows creating and managing teleporter networks
+  default: op
+
+lodestonetp.network.bypass:
+  description: Bypass per-network permission-node restrictions
+  default: op
+
+lodestonetp.warmup.bypass:
+  description: Bypass teleport warmup delay
+  default: op
+
+lodestonetp.admin:
+  description: Full admin access - bypass cooldowns, costs, manage any teleporter
+  default: op

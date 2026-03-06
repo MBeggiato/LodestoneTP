@@ -1,0 +1,5 @@
+name: LodestoneTP
+version: '${version}'
+main: io.github.marcel.loadstonetp.LodestoneTP
+description: A simple Paper plugin
+api-version: '1.21'
