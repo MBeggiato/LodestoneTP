@@ -1,12 +1,12 @@
-![Version](https://img.shields.io/badge/Minecraft-1.21.11-blue)&nbsp;&nbsp;[![Release](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml/badge.svg)](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml)&nbsp;&nbsp;[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/9UUzdjpVPC)
-
 # LodestoneTP
 
-<p align="center">
-  <img src="logo.png" alt="Logo" width="128" height="128" />
-  <br />
-  <i>A Paper 1.21.11+ plugin that turns Lodestone blocks into a teleporter network using Minecraft's native Dialog UI.</i>
-</p>
+![Version](https://img.shields.io/badge/Minecraft-1.21.11-blue) [![Release](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml/badge.svg)](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml) [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/9UUzdjpVPC)
+
+See [CHANGELOG.md](CHANGELOG.md) for release history and notable changes.
+
+![Logo](media/logo.png)
+
+_A Paper 1.21.11+ plugin that turns Lodestone blocks into a teleporter network using Minecraft's native Dialog UI._
 
 ## What Is LodestoneTP?
 
@@ -45,14 +45,11 @@ The plugin is **zero-config** — just drop the jar, restart, and start building
 
 ## How It Works
 
-<p align="center">
-  <i>Build a **multiblock structure** to create a teleporter:</i>
-  <br />
-  <img src="media/export-v9-04f9.gif" alt="Logo" width="850" height="auto" />
-  
-</p>
+_Build a **multiblock structure** to create a teleporter:_
 
-```
+![Teleporter Structure](media/export-v9-04f9.gif)
+
+```text
 [Polished Blackstone Bricks]  ← top
 [Lodestone]                   ← middle (right-click to interact)
 [Polished Blackstone Bricks]  ← bottom
@@ -95,25 +92,25 @@ Right-click the Lodestone to interact. The plugin:
 
 1. **Build a Teleporter:**
 
-   ```
-   [Polished Blackstone Bricks]
-   [Lodestone]
-   [Polished Blackstone Bricks]
-   ```
+```text
+ [Polished Blackstone Bricks]
+ [Lodestone]
+ [Polished Blackstone Bricks]
+```
 
-   Right-click the Lodestone to create a teleporter.
+Right-click the Lodestone to create a teleporter.
 
-2. **Access Admin Panel:**
+1. **Access Admin Panel:**
    - Command: `/lodestonetp admin`
    - Configure cooldowns, costs, effects, creation fees
    - All settings apply in-game (no config file edits needed)
 
-3. **Organize with Networks (Optional):**
+2. **Organize with Networks (Optional):**
    - Command: `/lodestonetp networks`
    - Create named groups of teleporters
    - Set optional per-network permission nodes
 
-4. **Reload Config:**
+3. **Reload Config:**
    - Command: `/lodestonetp reload`
    - Applies config changes and restores effects
 
@@ -314,25 +311,25 @@ The jar is output to `build/libs/` and auto-deployed to `server/plugins/` if the
 
 ## Troubleshooting
 
-**"I'm OP but can't access the admin panel"**
+### "I'm OP but can't access the admin panel"
 
 - Ensure `lodestonetp.admin` permission is not explicitly denied in your permission plugin
 - OPs automatically bypass permission checks, but some permission managers require explicit grants
 - Try `/lodestonetp admin` — should work if you're OP
 
-**"Teleporter still shows after structure is destroyed"**
+### "Teleporter still shows after structure is destroyed"
 
 - Teleporter might be in a loaded/cached location
 - Run `/lodestonetp reload` to force refresh
 - Check server logs for errors during destruction
 
-**"Particles/sounds not showing"**
+### "Particles/sounds not showing"
 
 - Verify `effects.enabled: true` and `effects.particles.enabled: true` in config
 - Check client particle settings (Options → Video Settings → Particles)
 - Increase `effects.particles.intensity` if set to `low`
 
-**"Warmup cancels immediately"**
+### "Warmup cancels immediately"
 
 - `cancel-on-move` is enabled; standing still is required
 - Crouching, jumping, or any movement > 0.1 blocks triggers cancellation

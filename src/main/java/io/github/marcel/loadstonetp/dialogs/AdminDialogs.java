@@ -3,10 +3,13 @@ package io.github.marcel.loadstonetp.dialogs;
 import io.github.marcel.loadstonetp.LodestoneTP;
 import io.github.marcel.loadstonetp.db.DatabaseManager;
 import io.github.marcel.loadstonetp.model.Teleporter;
+import io.github.marcel.loadstonetp.utils.ComponentFormatter;
+import io.github.marcel.loadstonetp.utils.PermissionChecker;
 import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
 import io.papermc.paper.registry.data.dialog.action.DialogAction;
+import io.papermc.paper.registry.data.dialog.action.DialogActionCallback;
 import io.papermc.paper.registry.data.dialog.body.DialogBody;
 import io.papermc.paper.registry.data.dialog.input.DialogInput;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
@@ -24,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public final class AdminDialogs {
 
@@ -40,47 +44,125 @@ public final class AdminDialogs {
     private static final String AMBIENT_RANGE_INPUT_KEY = "ambient_range";
     private static final String AMBIENT_INTERVAL_INPUT_KEY = "ambient_interval";
     private static final String LIGHT_LEVEL_INPUT_KEY = "light_level";
+    private static final ClickCallback.Options CLICK_OPTIONS = ClickCallback.Options.builder()
+            .uses(1)
+            .lifetime(Duration.ofMinutes(5))
+            .build();
 
     private AdminDialogs() {}
 
-    private static ClickCallback.Options clickOptions() {
-        return ClickCallback.Options.builder()
-                .uses(1)
-                .lifetime(Duration.ofMinutes(5))
-                .build();
+    private static ActionButton openDialogButton(Component label, Component tooltip, int width, Supplier<Dialog> dialogSupplier) {
+        return ActionButton.create(
+                label,
+                tooltip,
+                width,
+                DialogAction.customClick(
+                        (view, audience) -> {
+                            if (audience instanceof Player player) {
+                                player.showDialog(dialogSupplier.get());
+                            }
+                        },
+                        CLICK_OPTIONS
+                )
+        );
+    }
+
+    private static ActionButton actionButton(Component label, Component tooltip, int width, DialogAction action) {
+        return ActionButton.create(label, tooltip, width, action);
+    }
+
+    private static ActionButton actionButton(Component label, Component tooltip, int width, DialogActionCallback callback) {
+        return actionButton(label, tooltip, width, DialogAction.customClick(callback, CLICK_OPTIONS));
+    }
+
+    private static ActionButton saveButton(Component tooltip, int width, DialogActionCallback callback) {
+        return actionButton(Component.text("Save"), tooltip, width, callback);
+    }
+
+    private static ActionButton cancelButton(String tooltip, Supplier<Dialog> dialogSupplier) {
+        return openDialogButton(Component.text("Cancel"), Component.text(tooltip), 150, dialogSupplier);
+    }
+
+    private static ActionButton deleteButton(String label, String tooltip, int width, DialogActionCallback callback) {
+        return actionButton(Component.text(label, NamedTextColor.RED), Component.text(tooltip), width, callback);
+    }
+
+    private static ActionButton backButton(String tooltip, Supplier<Dialog> dialogSupplier) {
+        return openDialogButton(Component.text("Back"), Component.text(tooltip), 150, dialogSupplier);
+    }
+
+    private static ActionButton closeButton(String tooltip) {
+        return ActionButton.create(
+                Component.text("Close"),
+                Component.text(tooltip),
+                150,
+                DialogAction.customClick((view, audience) -> {}, CLICK_OPTIONS)
+        );
+    }
+
+        private static ActionButton noopButton(Component label, Component tooltip, int width) {
+                return actionButton(label, tooltip, width, (view, audience) -> {});
+        }
+
+    private static DialogBody messageBody(Component component) {
+        return DialogBody.plainMessage(component);
+    }
+
+    private static Component title(String text) {
+        return ComponentFormatter.emphasis(text);
+    }
+
+    private static Component teleporterTitle(Teleporter teleporter) {
+        return ComponentFormatter.emphasis("Teleporter: ")
+                .append(Component.text(teleporter.name(), NamedTextColor.WHITE));
+    }
+
+    private static Component teleporterLocation(Teleporter teleporter) {
+        return ComponentFormatter.neutral(
+                "Location: " + teleporter.world() + " (" + teleporter.x() + ", " + teleporter.y() + ", " + teleporter.z() + ")"
+        );
+    }
+
+    private static Component teleporterVisibility(Teleporter teleporter) {
+        return Component.text(
+                "Visibility: " + (teleporter.isPublic() ? "Public" : "Private"),
+                teleporter.isPublic() ? NamedTextColor.GREEN : NamedTextColor.RED
+        );
+    }
+
+    private static Component teleporterTooltip(Teleporter teleporter, String ownerName) {
+        return ComponentFormatter.neutral(teleporter.world() + " (" + teleporter.x() + ", " + teleporter.y() + ", " + teleporter.z() + ")")
+                .append(ComponentFormatter.neutral(" | Owner: "))
+                .append(Component.text(ownerName, NamedTextColor.WHITE))
+                .append(ComponentFormatter.neutral(" | "))
+                .append(Component.text(teleporter.isPublic() ? "Public" : "Private",
+                        teleporter.isPublic() ? NamedTextColor.GREEN : NamedTextColor.RED));
+    }
+
+    private static void persistConfig(LodestoneTP plugin) {
+        plugin.saveConfig();
+        plugin.reloadConfig();
     }
 
     private static void broadcastAdmin(Player actor, String message) {
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (p.isOp() || p.hasPermission("lodestonetp.admin")) {
-                p.sendMessage(Component.text("[LodestoneTP] ", NamedTextColor.GOLD)
-                        .append(Component.text("Admin " + actor.getName() + " " + message, NamedTextColor.YELLOW)));
+                        if (PermissionChecker.isAdmin(p)) {
+                                p.sendMessage(ComponentFormatter.emphasis("[LodestoneTP] ")
+                                                .append(ComponentFormatter.warning("Admin " + actor.getName() + " " + message)));
             }
         }
     }
 
     private static Dialog createErrorDialog(String message, LodestoneTP plugin, java.util.function.Supplier<Dialog> returnDialog) {
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Error", NamedTextColor.RED))
+                                .base(DialogBase.builder(ComponentFormatter.error("Error"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text(message, NamedTextColor.RED))
+                                                                messageBody(ComponentFormatter.error(message))
                         ))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.notice(
-                        ActionButton.create(
-                                Component.text("Back"),
-                                Component.text("Return to previous screen"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(returnDialog.get());
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                backButton("Return to previous screen", returnDialog)
                 ))
         );
     }
@@ -96,108 +178,58 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("⚙ Cooldown Settings"),
                 Component.text("Currently: " + (cooldownEnabled ? "enabled" : "disabled") + ", " + cooldownSeconds + " seconds"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCooldownDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCooldownDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("💰 Cost Settings"),
                 Component.text("Currently: " + (costEnabled ? "enabled" : "disabled") + ", type: " + costType),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCostDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCostDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("🗼 Manage Teleporters"),
                 Component.text("View and manage all teleporters"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createTeleporterListDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createTeleporterListDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("🌐 Default Visibility"),
                 Component.text("Currently: " + (defaultPublic ? "Public" : "Private")),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createDefaultVisibilityDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createDefaultVisibilityDialog(plugin)
         ));
 
         boolean effectsEnabled = plugin.getConfig().getBoolean("effects.enabled", true);
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("✨ Effects Settings"),
                 Component.text("Currently: " + (effectsEnabled ? "enabled" : "disabled")),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createEffectsDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createEffectsDialog(plugin)
         ));
 
         boolean feeEnabled = plugin.getConfig().getBoolean("creation-fee.enabled", true);
         String feeMaterial = plugin.getConfig().getString("creation-fee.material", "ENDER_PEARL");
         int feeAmount = plugin.getConfig().getInt("creation-fee.amount", 1);
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("💎 Creation Fee"),
                 Component.text("Currently: " + (feeEnabled ? feeAmount + "x " + feeMaterial : "disabled")),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCreationFeeDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCreationFeeDialog(plugin)
         ));
 
-        ActionButton exitButton = ActionButton.create(
-                Component.text("Close"),
-                Component.text("Close the admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {},
-                        clickOptions()
-                )
-        );
+        ActionButton exitButton = closeButton("Close the admin panel");
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("LodestoneTP Admin Panel", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("LodestoneTP Admin Panel"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Manage all plugin settings from here.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Manage all plugin settings from here.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -213,57 +245,34 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(enabled ? "Disable Cooldown" : "Enable Cooldown", enabled ? NamedTextColor.RED : NamedTextColor.GREEN),
                 Component.text("Toggle cooldown " + (enabled ? "off" : "on")),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            boolean newValue = !enabled;
-                            plugin.getConfig().set("cooldown.enabled", newValue);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, "changed cooldown to " + (newValue ? "enabled" : "disabled"));
-                            p.showDialog(createCooldownDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    boolean newValue = !enabled;
+                    plugin.getConfig().set("cooldown.enabled", newValue);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, "changed cooldown to " + (newValue ? "enabled" : "disabled"));
+                    p.showDialog(createCooldownDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Seconds (" + seconds + ")"),
                 Component.text("Change the cooldown duration"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCooldownSecondsInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCooldownSecondsInputDialog(plugin)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createMainPanel(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Cooldown Settings", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Cooldown Settings"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Status: " + (enabled ? "Enabled" : "Disabled"), enabled ? NamedTextColor.GREEN : NamedTextColor.RED)),
-                                DialogBody.plainMessage(Component.text("Duration: " + seconds + " seconds", NamedTextColor.GRAY))
+                                messageBody(Component.text("Status: " + (enabled ? "Enabled" : "Disabled"), enabled ? NamedTextColor.GREEN : NamedTextColor.RED)),
+                                messageBody(ComponentFormatter.neutral("Duration: " + seconds + " seconds"))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -275,9 +284,9 @@ public final class AdminDialogs {
         int current = plugin.getConfig().getInt("cooldown.seconds", 10);
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Set Cooldown Seconds", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Set Cooldown Seconds"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter the cooldown duration in seconds.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter the cooldown duration in seconds.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(SECONDS_INPUT_KEY, Component.text("Seconds"))
@@ -289,50 +298,33 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save the cooldown duration"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(SECONDS_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Seconds cannot be empty!", plugin, () -> createCooldownSecondsInputDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                int value = Integer.parseInt(input.trim());
-                                                if (value <= 0) {
-                                                    p.showDialog(createErrorDialog("Seconds must be a positive number!", plugin, () -> createCooldownSecondsInputDialog(plugin)));
-                                                    return;
-                                                }
-                                                plugin.getConfig().set("cooldown.seconds", value);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                plugin.getCooldownManager().setCooldownSeconds(value);
-                                                broadcastAdmin(p, "changed cooldown to " + value + " seconds");
-                                                p.showDialog(createCooldownDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid number! Enter a positive integer.", plugin, () -> createCooldownSecondsInputDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createCooldownDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save the cooldown duration"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(SECONDS_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Seconds cannot be empty!", plugin, () -> createCooldownSecondsInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                int value = Integer.parseInt(input.trim());
+                                                                                if (value <= 0) {
+                                                                                        p.showDialog(createErrorDialog("Seconds must be a positive number!", plugin, () -> createCooldownSecondsInputDialog(plugin)));
+                                                                                        return;
+                                                                                }
+                                                                                plugin.getConfig().set("cooldown.seconds", value);
+                                                                                persistConfig(plugin);
+                                                                                plugin.getCooldownManager().setCooldownSeconds(value);
+                                                                                broadcastAdmin(p, "changed cooldown to " + value + " seconds");
+                                                                                p.showDialog(createCooldownDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid number! Enter a positive integer.", plugin, () -> createCooldownSecondsInputDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                        openDialogButton(Component.text("Cancel"), Component.text("Cancel and go back"), 150, () -> createCooldownDialog(plugin))
                 ))
         );
     }
@@ -345,83 +337,60 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(enabled ? "Disable Cost" : "Enable Cost", enabled ? NamedTextColor.RED : NamedTextColor.GREEN),
                 Component.text("Toggle cost " + (enabled ? "off" : "on")),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            boolean newValue = !enabled;
-                            plugin.getConfig().set("cost.enabled", newValue);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, "changed cost to " + (newValue ? "enabled" : "disabled"));
-                            p.showDialog(createCostDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    boolean newValue = !enabled;
+                    plugin.getConfig().set("cost.enabled", newValue);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, "changed cost to " + (newValue ? "enabled" : "disabled"));
+                    p.showDialog(createCostDialog(plugin));
+                }
         ));
 
         // Cost type buttons
         for (String type : new String[]{"xp_levels", "item", "distance"}) {
             boolean isActive = type.equals(costType);
-            buttons.add(ActionButton.create(
-                    Component.text(type + (isActive ? " ✓" : ""), isActive ? NamedTextColor.GREEN : NamedTextColor.WHITE),
-                    Component.text(isActive ? "Currently active" : "Switch to " + type),
-                    200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                plugin.getConfig().set("cost.type", type);
-                                plugin.saveConfig();
-                                plugin.reloadConfig();
-                                broadcastAdmin(p, "changed cost type to " + type);
-                                p.showDialog(createCostDialog(plugin));
-                            },
-                            clickOptions()
-                    )
-            ));
+                        buttons.add(actionButton(
+                                        Component.text(type + (isActive ? " ✓" : ""), isActive ? NamedTextColor.GREEN : NamedTextColor.WHITE),
+                                        Component.text(isActive ? "Currently active" : "Switch to " + type),
+                                        200,
+                                        (view, audience) -> {
+                                                if (!(audience instanceof Player p)) return;
+                                                plugin.getConfig().set("cost.type", type);
+                                                persistConfig(plugin);
+                                                broadcastAdmin(p, "changed cost type to " + type);
+                                                p.showDialog(createCostDialog(plugin));
+                                        }
+                        ));
         }
 
         // Sub-panel button for the active cost type
-        buttons.add(ActionButton.create(
-                Component.text("Configure " + costType, NamedTextColor.GOLD),
-                Component.text("Edit settings for " + costType),
-                200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            switch (costType) {
-                                case "xp_levels" -> p.showDialog(createXpLevelsConfigDialog(plugin));
-                                case "item" -> p.showDialog(createItemConfigDialog(plugin));
-                                case "distance" -> p.showDialog(createDistanceConfigDialog(plugin));
-                                default -> p.showDialog(createCostDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        ));
+                buttons.add(actionButton(
+                                Component.text("Configure " + costType, NamedTextColor.GOLD),
+                                Component.text("Edit settings for " + costType),
+                                200,
+                                (view, audience) -> {
+                                        if (!(audience instanceof Player p)) return;
+                                        switch (costType) {
+                                                case "xp_levels" -> p.showDialog(createXpLevelsConfigDialog(plugin));
+                                                case "item" -> p.showDialog(createItemConfigDialog(plugin));
+                                                case "distance" -> p.showDialog(createDistanceConfigDialog(plugin));
+                                                default -> p.showDialog(createCostDialog(plugin));
+                                        }
+                                }
+                ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createMainPanel(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Cost Settings", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Cost Settings"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Status: " + (enabled ? "Enabled" : "Disabled"), enabled ? NamedTextColor.GREEN : NamedTextColor.RED)),
-                                DialogBody.plainMessage(Component.text("Type: " + costType, NamedTextColor.GRAY))
+                                messageBody(Component.text("Status: " + (enabled ? "Enabled" : "Disabled"), enabled ? NamedTextColor.GREEN : NamedTextColor.RED)),
+                                messageBody(ComponentFormatter.neutral("Type: " + costType))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -435,9 +404,9 @@ public final class AdminDialogs {
         int current = plugin.getConfig().getInt("cost.xp-levels", 3);
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("XP Levels Cost", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("XP Levels Cost"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set the number of XP levels required per teleport.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Set the number of XP levels required per teleport.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(XP_LEVELS_INPUT_KEY, Component.text("XP Levels"))
@@ -449,49 +418,32 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
+                        saveButton(
                                 Component.text("Save XP level cost"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(XP_LEVELS_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("XP levels cannot be empty!", plugin, () -> createXpLevelsConfigDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                int value = Integer.parseInt(input.trim());
-                                                if (value <= 0) {
-                                                    p.showDialog(createErrorDialog("XP levels must be a positive number!", plugin, () -> createXpLevelsConfigDialog(plugin)));
-                                                    return;
-                                                }
-                                                plugin.getConfig().set("cost.xp-levels", value);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                broadcastAdmin(p, "changed XP level cost to " + value);
-                                                p.showDialog(createCostDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid number! Enter a positive integer.", plugin, () -> createXpLevelsConfigDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(XP_LEVELS_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("XP levels cannot be empty!", plugin, () -> createXpLevelsConfigDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                int value = Integer.parseInt(input.trim());
+                                                                                if (value <= 0) {
+                                                                                        p.showDialog(createErrorDialog("XP levels must be a positive number!", plugin, () -> createXpLevelsConfigDialog(plugin)));
+                                                                                        return;
+                                                                                }
+                                                                                plugin.getConfig().set("cost.xp-levels", value);
+                                                                                persistConfig(plugin);
+                                                                                broadcastAdmin(p, "changed XP level cost to " + value);
+                                                                                p.showDialog(createCostDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid number! Enter a positive integer.", plugin, () -> createXpLevelsConfigDialog(plugin)));
+                                                                        }
+                                                                }
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createCostDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                        cancelButton("Cancel and go back", () -> createCostDialog(plugin))
                 ))
         );
     }
@@ -503,10 +455,10 @@ public final class AdminDialogs {
         int amount = plugin.getConfig().getInt("cost.item.amount", 1);
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Item Cost", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Item Cost"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set the item material and amount required per teleport.", NamedTextColor.WHITE)),
-                                DialogBody.plainMessage(Component.text("Current: " + amount + "x " + material, NamedTextColor.GRAY))
+                                messageBody(Component.text("Set the item material and amount required per teleport.", NamedTextColor.WHITE)),
+                                messageBody(ComponentFormatter.neutral("Current: " + amount + "x " + material))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(ITEM_MATERIAL_INPUT_KEY, Component.text("Material"))
@@ -523,66 +475,49 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
+                        saveButton(
                                 Component.text("Save item cost settings"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
 
-                                            String matInput = view.getText(ITEM_MATERIAL_INPUT_KEY);
-                                            String amtInput = view.getText(ITEM_AMOUNT_INPUT_KEY);
+                                                                        String matInput = view.getText(ITEM_MATERIAL_INPUT_KEY);
+                                                                        String amtInput = view.getText(ITEM_AMOUNT_INPUT_KEY);
 
-                                            if (matInput == null || matInput.isBlank()) {
-                                                p.showDialog(createErrorDialog("Material cannot be empty!", plugin, () -> createItemConfigDialog(plugin)));
-                                                return;
-                                            }
+                                                                        if (matInput == null || matInput.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Material cannot be empty!", plugin, () -> createItemConfigDialog(plugin)));
+                                                                                return;
+                                                                        }
 
-                                            Material mat = Material.matchMaterial(matInput.trim());
-                                            if (mat == null) {
-                                                p.showDialog(createErrorDialog("Invalid material: " + matInput.trim() + "! Use Minecraft material names like ENDER_PEARL.", plugin, () -> createItemConfigDialog(plugin)));
-                                                return;
-                                            }
+                                                                        Material mat = Material.matchMaterial(matInput.trim());
+                                                                        if (mat == null) {
+                                                                                p.showDialog(createErrorDialog("Invalid material: " + matInput.trim() + "! Use Minecraft material names like ENDER_PEARL.", plugin, () -> createItemConfigDialog(plugin)));
+                                                                                return;
+                                                                        }
 
-                                            if (amtInput == null || amtInput.isBlank()) {
-                                                p.showDialog(createErrorDialog("Amount cannot be empty!", plugin, () -> createItemConfigDialog(plugin)));
-                                                return;
-                                            }
+                                                                        if (amtInput == null || amtInput.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Amount cannot be empty!", plugin, () -> createItemConfigDialog(plugin)));
+                                                                                return;
+                                                                        }
 
-                                            try {
-                                                int amtValue = Integer.parseInt(amtInput.trim());
-                                                if (amtValue <= 0) {
-                                                    p.showDialog(createErrorDialog("Amount must be a positive number!", plugin, () -> createItemConfigDialog(plugin)));
-                                                    return;
-                                                }
+                                                                        try {
+                                                                                int amtValue = Integer.parseInt(amtInput.trim());
+                                                                                if (amtValue <= 0) {
+                                                                                        p.showDialog(createErrorDialog("Amount must be a positive number!", plugin, () -> createItemConfigDialog(plugin)));
+                                                                                        return;
+                                                                                }
 
-                                                plugin.getConfig().set("cost.item.material", mat.name());
-                                                plugin.getConfig().set("cost.item.amount", amtValue);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                broadcastAdmin(p, "changed item cost to " + amtValue + "x " + mat.name());
-                                                p.showDialog(createCostDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid amount! Enter a positive integer.", plugin, () -> createItemConfigDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
+                                                                                plugin.getConfig().set("cost.item.material", mat.name());
+                                                                                plugin.getConfig().set("cost.item.amount", amtValue);
+                                                                                persistConfig(plugin);
+                                                                                broadcastAdmin(p, "changed item cost to " + amtValue + "x " + mat.name());
+                                                                                p.showDialog(createCostDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid amount! Enter a positive integer.", plugin, () -> createItemConfigDialog(plugin)));
+                                                                        }
+                                                                }
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createCostDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                cancelButton("Cancel and go back", () -> createCostDialog(plugin))
                 ))
         );
     }
@@ -599,37 +534,26 @@ public final class AdminDialogs {
         // Currency selector buttons
         for (String curr : new String[]{"xp_levels", "item"}) {
             boolean isActive = curr.equals(currency);
-            buttons.add(ActionButton.create(
+            buttons.add(actionButton(
                     Component.text("Currency: " + curr + (isActive ? " ✓" : ""), isActive ? NamedTextColor.GREEN : NamedTextColor.WHITE),
                     Component.text(isActive ? "Currently active" : "Switch currency to " + curr),
                     200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                plugin.getConfig().set("cost.distance.currency", curr);
-                                plugin.saveConfig();
-                                plugin.reloadConfig();
-                                broadcastAdmin(p, "changed distance currency to " + curr);
-                                p.showDialog(createDistanceConfigDialog(plugin));
-                            },
-                            clickOptions()
-                    )
+                    (view, audience) -> {
+                        if (!(audience instanceof Player p)) return;
+                        plugin.getConfig().set("cost.distance.currency", curr);
+                        persistConfig(plugin);
+                        broadcastAdmin(p, "changed distance currency to " + curr);
+                        p.showDialog(createDistanceConfigDialog(plugin));
+                    }
             ));
         }
 
         // Cross-world cost button
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Cross-World Cost (" + crossWorldCost + ")"),
                 Component.text("Set the flat cost for cross-world teleports"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCrossWorldCostInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCrossWorldCostInputDialog(plugin)
         ));
 
         // Tier buttons
@@ -644,58 +568,32 @@ public final class AdminDialogs {
                     String distLabel = maxDist == -1 ? "unlimited" : String.valueOf(maxDist);
                     final int tierIndex = i;
 
-                    buttons.add(ActionButton.create(
+                                        buttons.add(openDialogButton(
                             Component.text("Tier: ≤" + distLabel + " blocks → " + tierCost),
                             Component.text("Edit this distance tier"),
                             200,
-                            DialogAction.customClick(
-                                    (view, audience) -> {
-                                        if (audience instanceof Player p) {
-                                            p.showDialog(createTierEditDialog(plugin, tierIndex));
-                                        }
-                                    },
-                                    clickOptions()
-                            )
+                                                        () -> createTierEditDialog(plugin, tierIndex)
                     ));
                 }
             }
         }
 
         // Add tier button
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("+ Add Tier", NamedTextColor.GREEN),
                 Component.text("Add a new distance tier"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createTierAddDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createTierAddDialog(plugin)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to cost settings"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCostDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to cost settings", () -> createCostDialog(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Distance Cost", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Distance Cost"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Currency: " + currency, NamedTextColor.GRAY)),
-                                DialogBody.plainMessage(Component.text("Cross-World Cost: " + crossWorldCost, NamedTextColor.GRAY)),
-                                DialogBody.plainMessage(Component.text("Tiers: " + (tiers != null ? tiers.size() : 0), NamedTextColor.GRAY))
+                                messageBody(ComponentFormatter.neutral("Currency: " + currency)),
+                                messageBody(ComponentFormatter.neutral("Cross-World Cost: " + crossWorldCost)),
+                                messageBody(ComponentFormatter.neutral("Tiers: " + (tiers != null ? tiers.size() : 0)))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -707,9 +605,9 @@ public final class AdminDialogs {
         int current = plugin.getConfig().getInt("cost.distance.cross-world-cost", 10);
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Cross-World Cost", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Cross-World Cost"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set the flat cost for teleporting between worlds.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Set the flat cost for teleporting between worlds.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(CROSS_WORLD_COST_INPUT_KEY, Component.text("Cost"))
@@ -721,49 +619,32 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save cross-world cost"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(CROSS_WORLD_COST_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Cost cannot be empty!", plugin, () -> createCrossWorldCostInputDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                int value = Integer.parseInt(input.trim());
-                                                if (value < 0) {
-                                                    p.showDialog(createErrorDialog("Cost must be non-negative!", plugin, () -> createCrossWorldCostInputDialog(plugin)));
-                                                    return;
-                                                }
-                                                plugin.getConfig().set("cost.distance.cross-world-cost", value);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                broadcastAdmin(p, "changed cross-world cost to " + value);
-                                                p.showDialog(createDistanceConfigDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid number! Enter a non-negative integer.", plugin, () -> createCrossWorldCostInputDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createDistanceConfigDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save cross-world cost"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(CROSS_WORLD_COST_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Cost cannot be empty!", plugin, () -> createCrossWorldCostInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                int value = Integer.parseInt(input.trim());
+                                                                                if (value < 0) {
+                                                                                        p.showDialog(createErrorDialog("Cost must be non-negative!", plugin, () -> createCrossWorldCostInputDialog(plugin)));
+                                                                                        return;
+                                                                                }
+                                                                                plugin.getConfig().set("cost.distance.cross-world-cost", value);
+                                                                                persistConfig(plugin);
+                                                                                broadcastAdmin(p, "changed cross-world cost to " + value);
+                                                                                p.showDialog(createDistanceConfigDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid number! Enter a non-negative integer.", plugin, () -> createCrossWorldCostInputDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                        cancelButton("Cancel and go back", () -> createDistanceConfigDialog(plugin))
                 ))
         );
     }
@@ -792,54 +673,29 @@ public final class AdminDialogs {
         List<ActionButton> buttons = new ArrayList<>();
 
         // Edit max-distance and cost
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Edit Values"),
                 Component.text("Change max-distance and cost"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createTierValuesInputDialog(plugin, tierIndex, finalMaxDist, finalCost));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createTierValuesInputDialog(plugin, tierIndex, finalMaxDist, finalCost)
         ));
 
         // Delete tier
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Delete Tier", NamedTextColor.RED),
                 Component.text("Remove this tier"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createTierDeleteConfirmDialog(plugin, tierIndex));
-                        },
-                        clickOptions()
-                )
+                () -> createTierDeleteConfirmDialog(plugin, tierIndex)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to distance settings"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createDistanceConfigDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to distance settings", () -> createDistanceConfigDialog(plugin));
 
         String distLabel = currentMaxDist == -1 ? "unlimited" : String.valueOf(currentMaxDist);
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Edit Tier", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Edit Tier"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Max Distance: " + distLabel + " blocks", NamedTextColor.GRAY)),
-                                DialogBody.plainMessage(Component.text("Cost: " + finalCost, NamedTextColor.GRAY))
+                                messageBody(ComponentFormatter.neutral("Max Distance: " + distLabel + " blocks")),
+                                messageBody(ComponentFormatter.neutral("Cost: " + finalCost))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -849,9 +705,9 @@ public final class AdminDialogs {
 
     public static Dialog createTierValuesInputDialog(LodestoneTP plugin, int tierIndex, int currentMaxDist, int currentCost) {
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Edit Tier Values", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Edit Tier Values"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set max-distance (-1 for unlimited) and cost.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Set max-distance (-1 for unlimited) and cost.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(TIER_MAX_DISTANCE_INPUT_KEY, Component.text("Max Distance"))
@@ -868,107 +724,76 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save tier values"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
+                                                saveButton(
+                                                                Component.text("Save tier values"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
 
-                                            String distInput = view.getText(TIER_MAX_DISTANCE_INPUT_KEY);
-                                            String costInput = view.getText(TIER_COST_INPUT_KEY);
+                                                                        String distInput = view.getText(TIER_MAX_DISTANCE_INPUT_KEY);
+                                                                        String costInput = view.getText(TIER_COST_INPUT_KEY);
 
-                                            if (distInput == null || distInput.isBlank() || costInput == null || costInput.isBlank()) {
-                                                p.showDialog(createErrorDialog("Both fields are required!", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
-                                                return;
-                                            }
+                                                                        if (distInput == null || distInput.isBlank() || costInput == null || costInput.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Both fields are required!", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
+                                                                                return;
+                                                                        }
 
-                                            try {
-                                                int maxDist = Integer.parseInt(distInput.trim());
-                                                int cost = Integer.parseInt(costInput.trim());
+                                                                        try {
+                                                                                int maxDist = Integer.parseInt(distInput.trim());
+                                                                                int cost = Integer.parseInt(costInput.trim());
 
-                                                if (maxDist < -1 || maxDist == 0) {
-                                                    p.showDialog(createErrorDialog("Max distance must be -1 (unlimited) or a positive integer!", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
-                                                    return;
-                                                }
-                                                if (cost < 0) {
-                                                    p.showDialog(createErrorDialog("Cost must be non-negative!", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
-                                                    return;
-                                                }
+                                                                                if (maxDist < -1 || maxDist == 0) {
+                                                                                        p.showDialog(createErrorDialog("Max distance must be -1 (unlimited) or a positive integer!", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
+                                                                                        return;
+                                                                                }
+                                                                                if (cost < 0) {
+                                                                                        p.showDialog(createErrorDialog("Cost must be non-negative!", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
+                                                                                        return;
+                                                                                }
 
-                                                saveTierAtIndex(plugin, tierIndex, maxDist, cost);
-                                                broadcastAdmin(p, "updated distance tier (max: " + maxDist + ", cost: " + cost + ")");
-                                                p.showDialog(createDistanceConfigDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid number! Enter integers only.", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createTierEditDialog(plugin, tierIndex));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                                                saveTierAtIndex(plugin, tierIndex, maxDist, cost);
+                                                                                broadcastAdmin(p, "updated distance tier (max: " + maxDist + ", cost: " + cost + ")");
+                                                                                p.showDialog(createDistanceConfigDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid number! Enter integers only.", plugin, () -> createTierValuesInputDialog(plugin, tierIndex, currentMaxDist, currentCost)));
+                                                                        }
+                                                                }
+                                                ),
+                        cancelButton("Cancel and go back", () -> createTierEditDialog(plugin, tierIndex))
                 ))
         );
     }
 
     public static Dialog createTierDeleteConfirmDialog(LodestoneTP plugin, int tierIndex) {
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Delete Tier?", NamedTextColor.RED))
+                .base(DialogBase.builder(ComponentFormatter.error("Delete Tier?"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Are you sure you want to delete this tier? This cannot be undone.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Are you sure you want to delete this tier? This cannot be undone.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Yes, Delete", NamedTextColor.RED),
-                                Component.text("Permanently delete this tier"),
+                        deleteButton(
+                                "Yes, Delete",
+                                "Permanently delete this tier",
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            removeTierAtIndex(plugin, tierIndex);
-                                            broadcastAdmin(p, "deleted a distance tier");
-                                            p.showDialog(createDistanceConfigDialog(plugin));
-                                        },
-                                        clickOptions()
-                                )
+                                (view, audience) -> {
+                                    if (!(audience instanceof Player p)) return;
+                                    removeTierAtIndex(plugin, tierIndex);
+                                    broadcastAdmin(p, "deleted a distance tier");
+                                    p.showDialog(createDistanceConfigDialog(plugin));
+                                }
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel deletion"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createTierEditDialog(plugin, tierIndex));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                        cancelButton("Cancel deletion", () -> createTierEditDialog(plugin, tierIndex))
                 ))
         );
     }
 
     public static Dialog createTierAddDialog(LodestoneTP plugin) {
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Add Distance Tier", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Add Distance Tier"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set max-distance (-1 for unlimited) and cost for the new tier.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Set max-distance (-1 for unlimited) and cost for the new tier.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(TIER_MAX_DISTANCE_INPUT_KEY, Component.text("Max Distance"))
@@ -985,65 +810,49 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Add"),
-                                Component.text("Add this tier"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
+                                                actionButton(
+                                                                Component.text("Add"),
+                                                                Component.text("Add this tier"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
 
-                                            String distInput = view.getText(TIER_MAX_DISTANCE_INPUT_KEY);
-                                            String costInput = view.getText(TIER_COST_INPUT_KEY);
+                                                                        String distInput = view.getText(TIER_MAX_DISTANCE_INPUT_KEY);
+                                                                        String costInput = view.getText(TIER_COST_INPUT_KEY);
 
-                                            if (distInput == null || distInput.isBlank() || costInput == null || costInput.isBlank()) {
-                                                p.showDialog(createErrorDialog("Both fields are required!", plugin, () -> createTierAddDialog(plugin)));
-                                                return;
-                                            }
+                                                                        if (distInput == null || distInput.isBlank() || costInput == null || costInput.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Both fields are required!", plugin, () -> createTierAddDialog(plugin)));
+                                                                                return;
+                                                                        }
 
-                                            try {
-                                                int maxDist = Integer.parseInt(distInput.trim());
-                                                int cost = Integer.parseInt(costInput.trim());
+                                                                        try {
+                                                                                int maxDist = Integer.parseInt(distInput.trim());
+                                                                                int cost = Integer.parseInt(costInput.trim());
 
-                                                if (maxDist < -1 || maxDist == 0) {
-                                                    p.showDialog(createErrorDialog("Max distance must be -1 (unlimited) or a positive integer!", plugin, () -> createTierAddDialog(plugin)));
-                                                    return;
-                                                }
-                                                if (cost < 0) {
-                                                    p.showDialog(createErrorDialog("Cost must be non-negative!", plugin, () -> createTierAddDialog(plugin)));
-                                                    return;
-                                                }
+                                                                                if (maxDist < -1 || maxDist == 0) {
+                                                                                        p.showDialog(createErrorDialog("Max distance must be -1 (unlimited) or a positive integer!", plugin, () -> createTierAddDialog(plugin)));
+                                                                                        return;
+                                                                                }
+                                                                                if (cost < 0) {
+                                                                                        p.showDialog(createErrorDialog("Cost must be non-negative!", plugin, () -> createTierAddDialog(plugin)));
+                                                                                        return;
+                                                                                }
 
-                                                addNewTier(plugin, maxDist, cost);
-                                                broadcastAdmin(p, "added distance tier (max: " + maxDist + ", cost: " + cost + ")");
-                                                p.showDialog(createDistanceConfigDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid number! Enter integers only.", plugin, () -> createTierAddDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createDistanceConfigDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                                                addNewTier(plugin, maxDist, cost);
+                                                                                broadcastAdmin(p, "added distance tier (max: " + maxDist + ", cost: " + cost + ")");
+                                                                                p.showDialog(createDistanceConfigDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid number! Enter integers only.", plugin, () -> createTierAddDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                                                cancelButton("Cancel and go back", () -> createDistanceConfigDialog(plugin))
                 ))
         );
     }
 
     // ── Tier Helper Methods ──────────────────────────────────────────
 
-    @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> loadTiers(LodestoneTP plugin) {
         List<Map<String, Object>> result = new ArrayList<>();
         List<?> raw = plugin.getConfig().getList("cost.distance.tiers");
@@ -1072,8 +881,7 @@ public final class AdminDialogs {
         });
 
         plugin.getConfig().set("cost.distance.tiers", tiers);
-        plugin.saveConfig();
-        plugin.reloadConfig();
+        persistConfig(plugin);
     }
 
     private static void saveTierAtIndex(LodestoneTP plugin, int index, int maxDistance, int cost) {
@@ -1111,25 +919,13 @@ public final class AdminDialogs {
 
         if (teleporters.isEmpty()) {
             // Empty state dialog
-            ActionButton backButton = ActionButton.create(
-                    Component.text("Back"),
-                    Component.text("Return to admin panel"),
-                    150,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (audience instanceof Player p) {
-                                    p.showDialog(createMainPanel(plugin));
-                                }
-                            },
-                            clickOptions()
-                    )
-            );
+                        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
             return Dialog.create(builder -> builder.empty()
-                    .base(DialogBase.builder(Component.text("Manage Teleporters", NamedTextColor.GOLD))
+                    .base(DialogBase.builder(title("Manage Teleporters"))
                             .body(List.of(
-                                    DialogBody.plainMessage(Component.text("Total teleporters: 0", NamedTextColor.GRAY)),
-                                    DialogBody.plainMessage(Component.text("No teleporters exist yet.", NamedTextColor.GRAY))
+                                    messageBody(ComponentFormatter.neutral("Total teleporters: 0")),
+                                    messageBody(ComponentFormatter.neutral("No teleporters exist yet."))
                             ))
                             .canCloseWithEscape(true)
                             .build())
@@ -1141,44 +937,21 @@ public final class AdminDialogs {
 
         for (Teleporter tp : teleporters) {
             String ownerName = resolvePlayerName(tp.ownerUuid());
-            Component tooltip = Component.text(tp.world() + " (" + tp.x() + ", " + tp.y() + ", " + tp.z() + ")")
-                    .append(Component.text(" | Owner: " + ownerName, NamedTextColor.GRAY))
-                    .append(Component.text(" | " + (tp.isPublic() ? "Public" : "Private"), tp.isPublic() ? NamedTextColor.GREEN : NamedTextColor.RED));
-
-            buttons.add(ActionButton.create(
+            buttons.add(openDialogButton(
                     Component.text(tp.name()),
-                    tooltip,
+                    teleporterTooltip(tp, ownerName),
                     200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (audience instanceof Player p) {
-                                    p.showDialog(createTeleporterActionDialog(plugin, tp));
-                                }
-                            },
-                            clickOptions()
-                    )
+                    () -> createTeleporterActionDialog(plugin, tp)
             ));
         }
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createMainPanel(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
         List<DialogBody> body = new ArrayList<>();
-        body.add(DialogBody.plainMessage(Component.text("Total teleporters: " + teleporters.size(), NamedTextColor.GRAY)));
+        body.add(messageBody(ComponentFormatter.neutral("Total teleporters: " + teleporters.size())));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Manage Teleporters", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Manage Teleporters"))
                         .body(body)
                         .canCloseWithEscape(true)
                         .build())
@@ -1193,97 +966,66 @@ public final class AdminDialogs {
         List<ActionButton> buttons = new ArrayList<>();
 
         // Delete button
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("🔴 Delete", NamedTextColor.RED),
                 Component.text("Delete this teleporter permanently"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createAdminDeleteConfirmDialog(plugin, tp));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createAdminDeleteConfirmDialog(plugin, tp)
         ));
 
         // Toggle visibility
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(tp.isPublic() ? "🔒 Make Private" : "🔓 Make Public", tp.isPublic() ? NamedTextColor.YELLOW : NamedTextColor.GREEN),
                 Component.text("Toggle visibility (currently " + (tp.isPublic() ? "Public" : "Private") + ")"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            boolean newValue = !tp.isPublic();
-                            db.setPublic(tp.id(), newValue);
-                            broadcastAdmin(p, "set teleporter '" + tp.name() + "' to " + (newValue ? "public" : "private"));
-                            Teleporter updated = new Teleporter(
-                                    tp.id(), tp.name(), tp.world(),
-                                    tp.x(), tp.y(), tp.z(), tp.yaw(),
-                                    tp.ownerUuid(), newValue, tp.cooldownOverride(), tp.networkId(), tp.linkedTeleporterId()
-                            );
-                            p.showDialog(createTeleporterActionDialog(plugin, updated));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    boolean newValue = !tp.isPublic();
+                    db.setPublic(tp.id(), newValue);
+                    broadcastAdmin(p, "set teleporter '" + tp.name() + "' to " + (newValue ? "public" : "private"));
+                    Teleporter updated = new Teleporter(
+                            tp.id(), tp.name(), tp.world(),
+                            tp.x(), tp.y(), tp.z(), tp.yaw(),
+                            tp.ownerUuid(), newValue, tp.cooldownOverride(), tp.networkId(), tp.linkedTeleporterId()
+                    );
+                    p.showDialog(createTeleporterActionDialog(plugin, updated));
+                }
         ));
 
         // Teleport here
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text("🚀 Teleport Here", NamedTextColor.AQUA),
                 Component.text("Teleport to this teleporter"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            var location = tp.toLocation();
-                            if (location == null) {
-                                p.sendMessage(Component.text("World '" + tp.world() + "' is not loaded!", NamedTextColor.RED));
-                                return;
-                            }
-                            plugin.getTeleportEffects().playDeparture(p.getLocation());
-                            p.teleport(location);
-                            plugin.getTeleportEffects().playArrival(p, location);
-                            p.sendMessage(Component.text("Teleported to ", NamedTextColor.GREEN)
-                                    .append(Component.text("\"" + tp.name() + "\"", NamedTextColor.GOLD)));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    var location = tp.toLocation();
+                    if (location == null) {
+                        p.sendMessage(ComponentFormatter.error("World '" + tp.world() + "' is not loaded!"));
+                        return;
+                    }
+                    plugin.getTeleportEffects().playDeparture(p.getLocation());
+                    p.teleport(location);
+                    plugin.getTeleportEffects().playArrival(p, location);
+                    p.sendMessage(ComponentFormatter.success("Teleported to ")
+                            .append(ComponentFormatter.teleporterName(tp.name())));
+                }
         ));
 
-        // View owner
-        buttons.add(ActionButton.create(
+        buttons.add(noopButton(
                 Component.text("👤 Owner: " + ownerName),
                 Component.text("UUID: " + (tp.ownerUuid() != null ? tp.ownerUuid() : "Unknown")),
-                200,
-                DialogAction.customClick(
-                        (view, audience) -> {},
-                        clickOptions()
-                )
+                200
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to teleporter list"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createTeleporterListDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to teleporter list", () -> createTeleporterListDialog(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Teleporter: ", NamedTextColor.GOLD)
-                                .append(Component.text(tp.name(), NamedTextColor.WHITE)))
+                .base(DialogBase.builder(teleporterTitle(tp))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Location: " + tp.world() + " (" + tp.x() + ", " + tp.y() + ", " + tp.z() + ")", NamedTextColor.GRAY)),
-                                DialogBody.plainMessage(Component.text("Visibility: " + (tp.isPublic() ? "Public" : "Private"), tp.isPublic() ? NamedTextColor.GREEN : NamedTextColor.RED)),
-                                DialogBody.plainMessage(Component.text("Owner: " + ownerName, NamedTextColor.GRAY))
+                                messageBody(teleporterLocation(tp)),
+                                messageBody(teleporterVisibility(tp)),
+                                messageBody(ComponentFormatter.neutral("Owner: " + ownerName))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -1295,45 +1037,30 @@ public final class AdminDialogs {
         DatabaseManager db = plugin.getDatabaseManager();
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Delete Teleporter?", NamedTextColor.RED))
+                .base(DialogBase.builder(ComponentFormatter.error("Delete Teleporter?"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Are you sure you want to delete '" + tp.name() + "'? This cannot be undone.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Are you sure you want to delete '" + tp.name() + "'? This cannot be undone.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Yes, Delete", NamedTextColor.RED),
-                                Component.text("Permanently delete this teleporter"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            if (db.removeTeleporter(tp.id())) {
-                                                broadcastAdmin(p, "deleted teleporter '" + tp.name() + "'");
-                                                plugin.getTeleportEffects().removeLightBlock(tp);
-                                                plugin.getTeleportEffects().refreshTeleporterLocations();
-                                                p.showDialog(createTeleporterListDialog(plugin));
-                                            } else {
-                                                p.sendMessage(Component.text("Failed to delete teleporter!", NamedTextColor.RED));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel deletion"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createTeleporterActionDialog(plugin, tp));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                deleteButton(
+                                                                "Yes, Delete",
+                                                                "Permanently delete this teleporter",
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        if (db.removeTeleporter(tp.id())) {
+                                                                                broadcastAdmin(p, "deleted teleporter '" + tp.name() + "'");
+                                                                                plugin.getTeleportEffects().removeLightBlock(tp);
+                                                                                plugin.getTeleportEffects().refreshTeleporterLocations();
+                                                                                p.showDialog(createTeleporterListDialog(plugin));
+                                                                        } else {
+                                                                                p.sendMessage(ComponentFormatter.error("Failed to delete teleporter!"));
+                                                                        }
+                                                                }
+                                                ),
+                                                cancelButton("Cancel deletion", () -> createTeleporterActionDialog(plugin, tp))
                 ))
         );
     }
@@ -1345,42 +1072,26 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(defaultPublic ? "Switch to Private" : "Switch to Public", defaultPublic ? NamedTextColor.YELLOW : NamedTextColor.GREEN),
                 Component.text("New teleporters will be " + (defaultPublic ? "private" : "public") + " by default"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            boolean newValue = !defaultPublic;
-                            plugin.getConfig().set("defaults.public", newValue);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, "changed default visibility to " + (newValue ? "public" : "private"));
-                            p.showDialog(createDefaultVisibilityDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    boolean newValue = !defaultPublic;
+                    plugin.getConfig().set("defaults.public", newValue);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, "changed default visibility to " + (newValue ? "public" : "private"));
+                    p.showDialog(createDefaultVisibilityDialog(plugin));
+                }
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createMainPanel(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Default Visibility", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Default Visibility"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("New teleporters default to: " + (defaultPublic ? "Public" : "Private"),
+                                messageBody(Component.text("New teleporters default to: " + (defaultPublic ? "Public" : "Private"),
                                         defaultPublic ? NamedTextColor.GREEN : NamedTextColor.RED))
                         ))
                         .canCloseWithEscape(true)
@@ -1398,106 +1109,68 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(effectsEnabled ? "Disable All Effects" : "Enable All Effects",
                         effectsEnabled ? NamedTextColor.RED : NamedTextColor.GREEN),
                 Component.text("Master toggle for all effects"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("effects.enabled", !effectsEnabled);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, (effectsEnabled ? "disabled" : "enabled") + " all effects");
-                            p.showDialog(createEffectsDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    plugin.getConfig().set("effects.enabled", !effectsEnabled);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, (effectsEnabled ? "disabled" : "enabled") + " all effects");
+                    p.showDialog(createEffectsDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(soundsEnabled ? "Disable Teleport Sounds" : "Enable Teleport Sounds",
                         soundsEnabled ? NamedTextColor.YELLOW : NamedTextColor.GREEN),
                 Component.text("Sound effects when teleporting"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("effects.sounds", !soundsEnabled);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, (soundsEnabled ? "disabled" : "enabled") + " teleport sounds");
-                            p.showDialog(createEffectsDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    plugin.getConfig().set("effects.sounds", !soundsEnabled);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, (soundsEnabled ? "disabled" : "enabled") + " teleport sounds");
+                    p.showDialog(createEffectsDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(particlesEnabled ? "Disable Teleport Particles" : "Enable Teleport Particles",
                         particlesEnabled ? NamedTextColor.YELLOW : NamedTextColor.GREEN),
                 Component.text("Particle effects when teleporting"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("effects.particles", !particlesEnabled);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, (particlesEnabled ? "disabled" : "enabled") + " teleport particles");
-                            p.showDialog(createEffectsDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    plugin.getConfig().set("effects.particles", !particlesEnabled);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, (particlesEnabled ? "disabled" : "enabled") + " teleport particles");
+                    p.showDialog(createEffectsDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("🔊 Ambient Settings"),
                 Component.text("Configure ambient sound and particles at teleporters"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createAmbientDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createAmbientDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("💡 Light Settings"),
                 Component.text("Configure light emission above teleporters"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createLightDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createLightDialog(plugin)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createMainPanel(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Effects Settings", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Effects Settings"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Master: " + (effectsEnabled ? "Enabled" : "Disabled") +
+                                messageBody(Component.text("Master: " + (effectsEnabled ? "Enabled" : "Disabled") +
                                         " | Sounds: " + (soundsEnabled ? "On" : "Off") +
                                         " | Particles: " + (particlesEnabled ? "On" : "Off") +
                                         " | Light: " + (plugin.getConfig().getBoolean("effects.light.enabled", true) ? "On" : "Off"),
@@ -1520,104 +1193,63 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(ambientEnabled ? "Disable Ambient Sound" : "Enable Ambient Sound",
                         ambientEnabled ? NamedTextColor.RED : NamedTextColor.GREEN),
                 Component.text("Looping sound at teleporter locations"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("effects.ambient.enabled", !ambientEnabled);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            plugin.getTeleportEffects().startAmbientLoop();
-                            broadcastAdmin(p, (ambientEnabled ? "disabled" : "enabled") + " ambient sound");
-                            p.showDialog(createAmbientDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    plugin.getConfig().set("effects.ambient.enabled", !ambientEnabled);
+                    persistConfig(plugin);
+                    plugin.getTeleportEffects().startAmbientLoop();
+                    broadcastAdmin(p, (ambientEnabled ? "disabled" : "enabled") + " ambient sound");
+                    p.showDialog(createAmbientDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(ambientParticles ? "Disable Ambient Particles" : "Enable Ambient Particles",
                         ambientParticles ? NamedTextColor.YELLOW : NamedTextColor.GREEN),
                 Component.text("Floating particles at teleporter locations"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("effects.ambient.particles", !ambientParticles);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            plugin.getTeleportEffects().startAmbientLoop();
-                            broadcastAdmin(p, (ambientParticles ? "disabled" : "enabled") + " ambient particles");
-                            p.showDialog(createAmbientDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    plugin.getConfig().set("effects.ambient.particles", !ambientParticles);
+                    persistConfig(plugin);
+                    plugin.getTeleportEffects().startAmbientLoop();
+                    broadcastAdmin(p, (ambientParticles ? "disabled" : "enabled") + " ambient particles");
+                    p.showDialog(createAmbientDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Volume (" + volume + ")"),
                 Component.text("Current: " + volume + " (0.0 - 1.0)"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createAmbientVolumeInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createAmbientVolumeInputDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Range (" + range + ")"),
                 Component.text("Current: " + range + " blocks"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createAmbientRangeInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createAmbientRangeInputDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Interval (" + interval + ")"),
                 Component.text("Current: " + interval + " ticks (" + (interval / 20.0) + "s)"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createAmbientIntervalInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createAmbientIntervalInputDialog(plugin)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to effects settings"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createEffectsDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to effects settings", () -> createEffectsDialog(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Ambient Settings", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Ambient Settings"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text(
+                                messageBody(Component.text(
                                         "Sound: " + (ambientEnabled ? "On" : "Off") +
                                         " | Particles: " + (ambientParticles ? "On" : "Off") +
                                         " | Vol: " + volume + " | Range: " + range + "b | Every " + (interval / 20.0) + "s",
@@ -1632,9 +1264,9 @@ public final class AdminDialogs {
     private static Dialog createAmbientVolumeInputDialog(LodestoneTP plugin) {
         double current = plugin.getConfig().getDouble("effects.ambient.volume", 0.4);
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Set Ambient Volume", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Set Ambient Volume"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter a value between 0.0 and 1.0", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter a value between 0.0 and 1.0", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(AMBIENT_VOLUME_INPUT_KEY,
@@ -1643,47 +1275,30 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save volume setting"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(AMBIENT_VOLUME_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Please enter a value.", plugin, () -> createAmbientVolumeInputDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                double val = Double.parseDouble(input.trim());
-                                                if (val < 0.0 || val > 1.0) throw new NumberFormatException();
-                                                plugin.getConfig().set("effects.ambient.volume", val);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                plugin.getTeleportEffects().startAmbientLoop();
-                                                broadcastAdmin(p, "set ambient volume to " + val);
-                                                p.showDialog(createAmbientDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid volume. Enter a number between 0.0 and 1.0.", plugin, () -> createAmbientVolumeInputDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Back"),
-                                Component.text("Return to ambient settings"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createAmbientDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save volume setting"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(AMBIENT_VOLUME_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Please enter a value.", plugin, () -> createAmbientVolumeInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                double val = Double.parseDouble(input.trim());
+                                                                                if (val < 0.0 || val > 1.0) throw new NumberFormatException();
+                                                                                plugin.getConfig().set("effects.ambient.volume", val);
+                                                                                persistConfig(plugin);
+                                                                                plugin.getTeleportEffects().startAmbientLoop();
+                                                                                broadcastAdmin(p, "set ambient volume to " + val);
+                                                                                p.showDialog(createAmbientDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid volume. Enter a number between 0.0 and 1.0.", plugin, () -> createAmbientVolumeInputDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                        backButton("Return to ambient settings", () -> createAmbientDialog(plugin))
                 ))
         );
     }
@@ -1691,9 +1306,9 @@ public final class AdminDialogs {
     private static Dialog createAmbientRangeInputDialog(LodestoneTP plugin) {
         double current = plugin.getConfig().getDouble("effects.ambient.range", 8.0);
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Set Ambient Range", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Set Ambient Range"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter distance in blocks (1-64)", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter distance in blocks (1-64)", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(AMBIENT_RANGE_INPUT_KEY,
@@ -1702,47 +1317,30 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save range setting"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(AMBIENT_RANGE_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Please enter a value.", plugin, () -> createAmbientRangeInputDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                double val = Double.parseDouble(input.trim());
-                                                if (val < 1 || val > 64) throw new NumberFormatException();
-                                                plugin.getConfig().set("effects.ambient.range", val);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                plugin.getTeleportEffects().startAmbientLoop();
-                                                broadcastAdmin(p, "set ambient range to " + val + " blocks");
-                                                p.showDialog(createAmbientDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid range. Enter a number between 1 and 64.", plugin, () -> createAmbientRangeInputDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Back"),
-                                Component.text("Return to ambient settings"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createAmbientDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save range setting"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(AMBIENT_RANGE_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Please enter a value.", plugin, () -> createAmbientRangeInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                double val = Double.parseDouble(input.trim());
+                                                                                if (val < 1 || val > 64) throw new NumberFormatException();
+                                                                                plugin.getConfig().set("effects.ambient.range", val);
+                                                                                persistConfig(plugin);
+                                                                                plugin.getTeleportEffects().startAmbientLoop();
+                                                                                broadcastAdmin(p, "set ambient range to " + val + " blocks");
+                                                                                p.showDialog(createAmbientDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid range. Enter a number between 1 and 64.", plugin, () -> createAmbientRangeInputDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                        backButton("Return to ambient settings", () -> createAmbientDialog(plugin))
                 ))
         );
     }
@@ -1750,9 +1348,9 @@ public final class AdminDialogs {
     private static Dialog createAmbientIntervalInputDialog(LodestoneTP plugin) {
         int current = plugin.getConfig().getInt("effects.ambient.interval-ticks", 80);
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Set Ambient Interval", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Set Ambient Interval"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter interval in ticks (20 = 1 second)", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter interval in ticks (20 = 1 second)", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(AMBIENT_INTERVAL_INPUT_KEY,
@@ -1761,47 +1359,30 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save interval setting"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(AMBIENT_INTERVAL_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Please enter a value.", plugin, () -> createAmbientIntervalInputDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                int val = Integer.parseInt(input.trim());
-                                                if (val < 20 || val > 6000) throw new NumberFormatException();
-                                                plugin.getConfig().set("effects.ambient.interval-ticks", val);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                plugin.getTeleportEffects().startAmbientLoop();
-                                                broadcastAdmin(p, "set ambient interval to " + val + " ticks (" + (val / 20.0) + "s)");
-                                                p.showDialog(createAmbientDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid interval. Enter a number between 20 and 6000.", plugin, () -> createAmbientIntervalInputDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Back"),
-                                Component.text("Return to ambient settings"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createAmbientDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save interval setting"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(AMBIENT_INTERVAL_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Please enter a value.", plugin, () -> createAmbientIntervalInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                int val = Integer.parseInt(input.trim());
+                                                                                if (val < 20 || val > 6000) throw new NumberFormatException();
+                                                                                plugin.getConfig().set("effects.ambient.interval-ticks", val);
+                                                                                persistConfig(plugin);
+                                                                                plugin.getTeleportEffects().startAmbientLoop();
+                                                                                broadcastAdmin(p, "set ambient interval to " + val + " ticks (" + (val / 20.0) + "s)");
+                                                                                p.showDialog(createAmbientDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid interval. Enter a number between 20 and 6000.", plugin, () -> createAmbientIntervalInputDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                        backButton("Return to ambient settings", () -> createAmbientDialog(plugin))
                 ))
         );
     }
@@ -1815,62 +1396,39 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
-                Component.text(lightEnabled ? "Disable Light" : "Enable Light",
-                        lightEnabled ? NamedTextColor.RED : NamedTextColor.GREEN),
-                Component.text("Toggle light emission above teleporters"),
-                200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("effects.light.enabled", !lightEnabled);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            if (!lightEnabled) {
-                                plugin.getTeleportEffects().restoreAllLightBlocks();
-                            } else {
-                                plugin.getTeleportEffects().removeAllLightBlocks();
-                            }
-                            broadcastAdmin(p, (lightEnabled ? "disabled" : "enabled") + " teleporter light emission");
-                            p.showDialog(createLightDialog(plugin));
-                        },
-                        clickOptions()
-                )
-        ));
+                buttons.add(actionButton(
+                                Component.text(lightEnabled ? "Disable Light" : "Enable Light",
+                                                lightEnabled ? NamedTextColor.RED : NamedTextColor.GREEN),
+                                Component.text("Toggle light emission above teleporters"),
+                                200,
+                                (view, audience) -> {
+                                        if (!(audience instanceof Player p)) return;
+                                        plugin.getConfig().set("effects.light.enabled", !lightEnabled);
+                                        persistConfig(plugin);
+                                        if (!lightEnabled) {
+                                                plugin.getTeleportEffects().restoreAllLightBlocks();
+                                        } else {
+                                                plugin.getTeleportEffects().removeAllLightBlocks();
+                                        }
+                                        broadcastAdmin(p, (lightEnabled ? "disabled" : "enabled") + " teleporter light emission");
+                                        p.showDialog(createLightDialog(plugin));
+                                }
+                ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Light Level (" + level + ")"),
                 Component.text("Current: " + level + "/15"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createLightLevelInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createLightLevelInputDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
-                Component.text("Back", NamedTextColor.GRAY),
-                Component.text("Return to Effects Settings"),
-                200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createEffectsDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        ));
+        buttons.add(backButton("Return to Effects Settings", () -> createEffectsDialog(plugin)));
 
         return Dialog.create(builder -> builder
                 .empty()
                 .base(DialogBase.builder(Component.text("💡 Light Settings", NamedTextColor.YELLOW))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text(
+                                messageBody(Component.text(
                                         "Status: " + (lightEnabled ? "Enabled" : "Disabled") +
                                         " | Level: " + level + "/15",
                                         lightEnabled ? NamedTextColor.GREEN : NamedTextColor.RED))
@@ -1878,10 +1436,7 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.multiAction(buttons,
-                        ActionButton.create(Component.text("Close", NamedTextColor.GRAY),
-                                Component.text("Close dialog"), 100, DialogAction.customClick(
-                                        (view, audience) -> { /* closes dialog */ },
-                                        clickOptions())),
+                        closeButton("Close dialog"),
                         1))
         );
     }
@@ -1893,9 +1448,8 @@ public final class AdminDialogs {
                 .empty()
                 .base(DialogBase.builder(Component.text("Set Light Level", NamedTextColor.YELLOW))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text(
-                                        "Current: " + current + ". Enter a value from 0 to 15.",
-                                        NamedTextColor.GRAY))
+                                messageBody(ComponentFormatter.neutral(
+                                        "Current: " + current + ". Enter a value from 0 to 15."))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(LIGHT_LEVEL_INPUT_KEY, Component.text("Light Level"))
@@ -1907,47 +1461,32 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save", NamedTextColor.GREEN),
-                                Component.text("Apply light level"),
-                                100,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(LIGHT_LEVEL_INPUT_KEY);
-                                            try {
-                                                int val = Integer.parseInt(input.trim());
-                                                if (val < 0 || val > 15) {
-                                                    p.sendMessage(Component.text("Light level must be 0-15.", NamedTextColor.RED));
-                                                } else {
-                                                    plugin.getConfig().set("effects.light.level", val);
-                                                    plugin.saveConfig();
-                                                    plugin.reloadConfig();
-                                                    plugin.getTeleportEffects().removeAllLightBlocks();
-                                                    plugin.getTeleportEffects().restoreAllLightBlocks();
-                                                    broadcastAdmin(p, "set light level to " + val);
-                                                }
-                                            } catch (NumberFormatException e) {
-                                                p.sendMessage(Component.text("Invalid number.", NamedTextColor.RED));
-                                            }
-                                            p.showDialog(createLightDialog(plugin));
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Cancel", NamedTextColor.GRAY),
-                                Component.text("Go back"),
-                                100,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createLightDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                actionButton(
+                                                                Component.text("Save", NamedTextColor.GREEN),
+                                                                Component.text("Apply light level"),
+                                                                100,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(LIGHT_LEVEL_INPUT_KEY);
+                                                                        try {
+                                                                                int val = Integer.parseInt(input.trim());
+                                                                                if (val < 0 || val > 15) {
+                                                                                        p.sendMessage(ComponentFormatter.error("Light level must be 0-15."));
+                                                                                } else {
+                                                                                        plugin.getConfig().set("effects.light.level", val);
+                                                                                        persistConfig(plugin);
+                                                                                        plugin.getTeleportEffects().removeAllLightBlocks();
+                                                                                        plugin.getTeleportEffects().restoreAllLightBlocks();
+                                                                                        broadcastAdmin(p, "set light level to " + val);
+                                                                                }
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.sendMessage(ComponentFormatter.error("Invalid number."));
+                                                                        }
+                                                                        p.showDialog(createLightDialog(plugin));
+                                                                }
+                                                ),
+                                                openDialogButton(Component.text("Cancel", NamedTextColor.GRAY), Component.text("Go back"), 100,
+                                                                () -> createLightDialog(plugin))
                 ))
         );
     }
@@ -1960,70 +1499,40 @@ public final class AdminDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text(feeEnabled ? "Disable Creation Fee" : "Enable Creation Fee",
                         feeEnabled ? NamedTextColor.RED : NamedTextColor.GREEN),
                 Component.text("Toggle item cost to create teleporters"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            plugin.getConfig().set("creation-fee.enabled", !feeEnabled);
-                            plugin.saveConfig();
-                            plugin.reloadConfig();
-                            broadcastAdmin(p, (feeEnabled ? "disabled" : "enabled") + " creation fee");
-                            p.showDialog(createCreationFeeDialog(plugin));
-                        },
-                        clickOptions()
-                )
+                (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    plugin.getConfig().set("creation-fee.enabled", !feeEnabled);
+                    persistConfig(plugin);
+                    broadcastAdmin(p, (feeEnabled ? "disabled" : "enabled") + " creation fee");
+                    p.showDialog(createCreationFeeDialog(plugin));
+                }
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Material (" + materialName + ")"),
                 Component.text("Current: " + materialName),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCreationFeeMaterialInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCreationFeeMaterialInputDialog(plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Amount (" + amount + ")"),
                 Component.text("Current: " + amount),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createCreationFeeAmountInputDialog(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
+                () -> createCreationFeeAmountInputDialog(plugin)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to admin panel"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createMainPanel(plugin));
-                            }
-                        },
-                        clickOptions()
-                )
-        );
+        ActionButton backButton = backButton("Return to admin panel", () -> createMainPanel(plugin));
 
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Creation Fee", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Creation Fee"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text(
+                                messageBody(Component.text(
                                         feeEnabled ? "Requires " + amount + "x " + materialName + " to create a teleporter" : "Creation fee is disabled",
                                         feeEnabled ? NamedTextColor.GREEN : NamedTextColor.YELLOW))
                         ))
@@ -2036,9 +1545,9 @@ public final class AdminDialogs {
     private static Dialog createCreationFeeMaterialInputDialog(LodestoneTP plugin) {
         String current = plugin.getConfig().getString("creation-fee.material", "ENDER_PEARL");
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Set Creation Fee Material", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Set Creation Fee Material"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter a valid Bukkit material name (e.g. ENDER_PEARL, DIAMOND)", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter a valid Bukkit material name (e.g. ENDER_PEARL, DIAMOND)", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(CREATION_FEE_MATERIAL_INPUT_KEY,
@@ -2047,45 +1556,28 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save material setting"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(CREATION_FEE_MATERIAL_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Please enter a material name.", plugin, () -> createCreationFeeMaterialInputDialog(plugin)));
-                                                return;
-                                            }
-                                            String val = input.toUpperCase().trim();
-                                            if (Material.matchMaterial(val) == null) {
-                                                p.showDialog(createErrorDialog("Unknown material: " + val, plugin, () -> createCreationFeeMaterialInputDialog(plugin)));
-                                                return;
-                                            }
-                                            plugin.getConfig().set("creation-fee.material", val);
-                                            plugin.saveConfig();
-                                            plugin.reloadConfig();
-                                            broadcastAdmin(p, "set creation fee material to " + val);
-                                            p.showDialog(createCreationFeeDialog(plugin));
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Back"),
-                                Component.text("Return to creation fee settings"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createCreationFeeDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save material setting"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(CREATION_FEE_MATERIAL_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Please enter a material name.", plugin, () -> createCreationFeeMaterialInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        String val = input.toUpperCase().trim();
+                                                                        if (Material.matchMaterial(val) == null) {
+                                                                                p.showDialog(createErrorDialog("Unknown material: " + val, plugin, () -> createCreationFeeMaterialInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        plugin.getConfig().set("creation-fee.material", val);
+                                                                        persistConfig(plugin);
+                                                                        broadcastAdmin(p, "set creation fee material to " + val);
+                                                                        p.showDialog(createCreationFeeDialog(plugin));
+                                                                }
+                                                ),
+                        backButton("Return to creation fee settings", () -> createCreationFeeDialog(plugin))
                 ))
         );
     }
@@ -2093,9 +1585,9 @@ public final class AdminDialogs {
     private static Dialog createCreationFeeAmountInputDialog(LodestoneTP plugin) {
         int current = plugin.getConfig().getInt("creation-fee.amount", 1);
         return Dialog.create(builder -> builder.empty()
-                .base(DialogBase.builder(Component.text("Set Creation Fee Amount", NamedTextColor.GOLD))
+                .base(DialogBase.builder(title("Set Creation Fee Amount"))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter amount (1-64)", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter amount (1-64)", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(CREATION_FEE_AMOUNT_INPUT_KEY,
@@ -2104,46 +1596,29 @@ public final class AdminDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
-                                Component.text("Save amount setting"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText(CREATION_FEE_AMOUNT_INPUT_KEY);
-                                            if (input == null || input.isBlank()) {
-                                                p.showDialog(createErrorDialog("Please enter an amount.", plugin, () -> createCreationFeeAmountInputDialog(plugin)));
-                                                return;
-                                            }
-                                            try {
-                                                int val = Integer.parseInt(input.trim());
-                                                if (val < 1 || val > 64) throw new NumberFormatException();
-                                                plugin.getConfig().set("creation-fee.amount", val);
-                                                plugin.saveConfig();
-                                                plugin.reloadConfig();
-                                                broadcastAdmin(p, "set creation fee amount to " + val);
-                                                p.showDialog(createCreationFeeDialog(plugin));
-                                            } catch (NumberFormatException e) {
-                                                p.showDialog(createErrorDialog("Invalid amount. Enter a number between 1 and 64.", plugin, () -> createCreationFeeAmountInputDialog(plugin)));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        ),
-                        ActionButton.create(
-                                Component.text("Back"),
-                                Component.text("Return to creation fee settings"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createCreationFeeDialog(plugin));
-                                            }
-                                        },
-                                        clickOptions()
-                                )
-                        )
+                                                saveButton(
+                                                                Component.text("Save amount setting"),
+                                                                150,
+                                                                (view, audience) -> {
+                                                                        if (!(audience instanceof Player p)) return;
+                                                                        String input = view.getText(CREATION_FEE_AMOUNT_INPUT_KEY);
+                                                                        if (input == null || input.isBlank()) {
+                                                                                p.showDialog(createErrorDialog("Please enter an amount.", plugin, () -> createCreationFeeAmountInputDialog(plugin)));
+                                                                                return;
+                                                                        }
+                                                                        try {
+                                                                                int val = Integer.parseInt(input.trim());
+                                                                                if (val < 1 || val > 64) throw new NumberFormatException();
+                                                                                plugin.getConfig().set("creation-fee.amount", val);
+                                                                                persistConfig(plugin);
+                                                                                broadcastAdmin(p, "set creation fee amount to " + val);
+                                                                                p.showDialog(createCreationFeeDialog(plugin));
+                                                                        } catch (NumberFormatException e) {
+                                                                                p.showDialog(createErrorDialog("Invalid amount. Enter a number between 1 and 64.", plugin, () -> createCreationFeeAmountInputDialog(plugin)));
+                                                                        }
+                                                                }
+                                                ),
+                        backButton("Return to creation fee settings", () -> createCreationFeeDialog(plugin))
                 ))
         );
     }

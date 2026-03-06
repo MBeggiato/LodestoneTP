@@ -4,7 +4,10 @@ import io.github.marcel.loadstonetp.CooldownManager;
 import io.github.marcel.loadstonetp.LodestoneTP;
 import io.github.marcel.loadstonetp.db.DatabaseManager;
 import io.github.marcel.loadstonetp.model.Teleporter;
+import io.github.marcel.loadstonetp.utils.ComponentFormatter;
+import io.github.marcel.loadstonetp.utils.PermissionChecker;
 import io.papermc.paper.dialog.Dialog;
+import io.papermc.paper.registry.data.dialog.action.DialogActionCallback;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
 import io.papermc.paper.registry.data.dialog.action.DialogAction;
@@ -36,15 +39,124 @@ public final class TeleporterDialogs {
 
     private static final String NAME_INPUT_KEY = "teleporter_name";
     private static final String PLAYER_INPUT_KEY = "player_name";
+    private static final ClickCallback.Options CLICK_OPTIONS = ClickCallback.Options.builder()
+        .uses(1)
+        .lifetime(ClickCallback.DEFAULT_LIFETIME)
+        .build();
+    private static final ClickCallback.Options NOOP_CLICK_OPTIONS = ClickCallback.Options.builder()
+        .uses(0)
+        .lifetime(ClickCallback.DEFAULT_LIFETIME)
+        .build();
 
     private TeleporterDialogs() {}
+
+    private static ActionButton actionButton(Component label, Component tooltip, int width, DialogAction action) {
+        return ActionButton.create(label, tooltip, width, action);
+    }
+
+    private static ActionButton actionButton(Component label, Component tooltip, int width, DialogActionCallback callback) {
+        return actionButton(label, tooltip, width, DialogAction.customClick(callback, CLICK_OPTIONS));
+    }
+
+    private static ActionButton openDialogButton(Component label, Component tooltip, int width, java.util.function.Supplier<Dialog> dialogSupplier) {
+        return actionButton(
+                label,
+                tooltip,
+                width,
+                DialogAction.customClick(
+                        (view, audience) -> {
+                            if (audience instanceof Player player) {
+                                player.showDialog(dialogSupplier.get());
+                            }
+                        },
+                        CLICK_OPTIONS
+                )
+        );
+    }
+
+    private static ActionButton backButton(String tooltip, java.util.function.Supplier<Dialog> dialogSupplier) {
+        return openDialogButton(Component.text("Back"), Component.text(tooltip), 150, dialogSupplier);
+    }
+
+    private static ActionButton closeButton(String tooltip) {
+        return actionButton(
+                Component.text("Close"),
+                Component.text(tooltip),
+                200,
+                DialogAction.customClick((view, audience) -> {}, CLICK_OPTIONS)
+        );
+    }
+
+    private static ActionButton noopButton(Component label, Component tooltip, int width) {
+        return actionButton(label, tooltip, width, DialogAction.customClick((view, audience) -> {}, NOOP_CLICK_OPTIONS));
+    }
+
+    private static DialogBody messageBody(Component component) {
+        return DialogBody.plainMessage(component);
+    }
+
+    private static Component teleporterTitle(String prefix, Teleporter teleporter) {
+        return Component.text(prefix, NamedTextColor.GOLD)
+                .append(Component.text(teleporter.name(), NamedTextColor.WHITE));
+    }
+
+    private static Component teleporterCoordinates(Teleporter teleporter, NamedTextColor color) {
+        return Component.text(
+                teleporter.world() + " (" + teleporter.x() + ", " + teleporter.y() + ", " + teleporter.z() + ")",
+                color
+        );
+    }
+
+    private static Component teleporterTooltip(Teleporter from, Teleporter to, LodestoneTP plugin) {
+        return Component.text(to.world() + " (" + to.x() + ", " + to.y() + ", " + to.z() + ") — ")
+                .append(getCostPreview(from, to, plugin));
+    }
+
+    private static double horizontalDistance(Teleporter from, Teleporter to) {
+        double dx = from.x() - to.x();
+        double dz = from.z() - to.z();
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static int resolveDistanceCost(Teleporter from, Teleporter to, LodestoneTP plugin) {
+        if (!from.world().equals(to.world())) {
+            return plugin.getConfig().getInt("cost.distance.cross-world-cost", 10);
+        }
+
+        List<?> tiers = plugin.getConfig().getList("cost.distance.tiers");
+        if (tiers == null) {
+            return 0;
+        }
+
+        double distance = horizontalDistance(from, to);
+        for (Object tierObj : tiers) {
+            if (tierObj instanceof java.util.Map<?, ?> tier) {
+                Object maxDistObj = tier.get("max-distance");
+                Object costObj = tier.get("cost");
+                int maxDistance = maxDistObj instanceof Number n ? n.intValue() : -1;
+                int tierCost = costObj instanceof Number n ? n.intValue() : 0;
+                if (maxDistance == -1 || distance <= maxDistance) {
+                    return tierCost;
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static String formatDistanceText(Teleporter from, Teleporter to) {
+        if (!from.world().equals(to.world())) {
+            return "Cross-dimension (" + from.world() + " → " + to.world() + ")";
+        }
+
+        return (int) Math.round(horizontalDistance(from, to)) + " blocks";
+    }
 
     public static Dialog createNewTeleporterDialog(DatabaseManager db, Location lodestoneLocation, float playerYaw, String ownerUuid, boolean defaultPublic, LodestoneTP plugin) {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Create Teleporter", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter a unique name for this teleporter.", NamedTextColor.WHITE)),
-                                DialogBody.plainMessage(Component.text(defaultPublic ? "Visibility: Public" : "Visibility: Private", NamedTextColor.GRAY))
+                        messageBody(Component.text("Enter a unique name for this teleporter.", NamedTextColor.WHITE)),
+                        messageBody(ComponentFormatter.neutral(defaultPublic ? "Visibility: Public" : "Visibility: Private"))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(NAME_INPUT_KEY, Component.text("Teleporter Name"))
@@ -66,23 +178,21 @@ public final class TeleporterDialogs {
 
                                             String name = view.getText(NAME_INPUT_KEY);
                                             if (name == null || name.isBlank()) {
-                                                player.sendMessage(Component.text("Teleporter name cannot be empty!", NamedTextColor.RED));
+                                                player.sendMessage(ComponentFormatter.error("Teleporter name cannot be empty!"));
                                                 return;
                                             }
 
                                             name = name.trim();
 
                                             if (db.isNameTaken(name)) {
-                                                player.sendMessage(Component.text("A teleporter with that name already exists!", NamedTextColor.RED));
+                                                player.sendMessage(ComponentFormatter.error("A teleporter with that name already exists!"));
                                                 return;
                                             }
 
                                             if (db.addTeleporter(name, lodestoneLocation, playerYaw, ownerUuid, defaultPublic)) {
-                                                player.sendMessage(
-                                                        Component.text("Teleporter ", NamedTextColor.GREEN)
-                                                                .append(Component.text("\"" + name + "\"", NamedTextColor.GOLD))
-                                                                .append(Component.text(" created!", NamedTextColor.GREEN))
-                                                );
+                                                player.sendMessage(ComponentFormatter.success("Teleporter ")
+                                                        .append(ComponentFormatter.teleporterName(name))
+                                                        .append(ComponentFormatter.success(" created!")));
 
                                                 plugin.getTeleportEffects().refreshTeleporterLocations();
                                                 plugin.getTeleportEffects().placeLightBlock(lodestoneLocation);
@@ -99,38 +209,31 @@ public final class TeleporterDialogs {
                                                     }
                                                 }
                                             } else {
-                                                player.sendMessage(Component.text("Failed to create teleporter. A teleporter may already exist at this location.", NamedTextColor.RED));
+                                                player.sendMessage(ComponentFormatter.error("Failed to create teleporter. A teleporter may already exist at this location."));
                                             }
                                         },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
+                                        CLICK_OPTIONS
                                 )
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel creation"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player player) {
-                                                player.sendMessage(Component.text("Teleporter creation cancelled.", NamedTextColor.GRAY));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                        actionButton(
+                            Component.text("Cancel"),
+                            Component.text("Cancel creation"),
+                            150,
+                            DialogAction.customClick(
+                                (view, audience) -> {
+                                    if (audience instanceof Player player) {
+                                    player.sendMessage(ComponentFormatter.neutral("Teleporter creation cancelled."));
+                                    }
+                                },
+                                CLICK_OPTIONS
+                            )
                         )
                 ))
         );
     }
 
     public static Dialog createOwnerManagementDialog(DatabaseManager db, Teleporter current, Player player, LodestoneTP plugin) {
-        Component title = Component.text("Teleporter: ", NamedTextColor.GOLD)
-                .append(Component.text(current.name(), NamedTextColor.WHITE));
+        Component title = teleporterTitle("Teleporter: ", current);
 
         String playerUuid = player.getUniqueId().toString();
         List<Teleporter> accessible = db.getAccessibleTeleporters(playerUuid);
@@ -141,8 +244,7 @@ public final class TeleporterDialogs {
         for (Teleporter tp : accessible) {
             if (tp.id() == current.id()) continue;
 
-            Component tooltip = Component.text(tp.world() + " (" + tp.x() + ", " + tp.y() + ", " + tp.z() + ") — ")
-                    .append(getCostPreview(current, tp, plugin));
+            Component tooltip = teleporterTooltip(current, tp, plugin);
 
             buttons.add(ActionButton.create(
                     Component.text(tp.name()),
@@ -154,10 +256,7 @@ public final class TeleporterDialogs {
                                 Dialog confirmDialog = createTeleportConfirmDialog(db, current, tp, p, plugin);
                                 p.showDialog(confirmDialog);
                             },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
+                                CLICK_OPTIONS
                     )
             ));
         }
@@ -173,10 +272,7 @@ public final class TeleporterDialogs {
                             Dialog accessDialog = createAccessManagementDialog(db, current, p, plugin);
                             p.showDialog(accessDialog);
                         },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
+                        CLICK_OPTIONS
                 )
         ));
 
@@ -190,31 +286,16 @@ public final class TeleporterDialogs {
                             Dialog deleteDialog = createDeleteConfirmationDialog(db, current, plugin);
                             p.showDialog(deleteDialog);
                         },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
+                        CLICK_OPTIONS
                 )
         ));
 
-        ActionButton exitButton = ActionButton.create(
-                Component.text("Close"),
-                Component.text("Close the menu"),
-                200,
-                DialogAction.customClick(
-                        (view, audience) -> {},
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
-        );
+        ActionButton exitButton = closeButton("Close the menu");
 
         List<DialogBody> body = new ArrayList<>();
-        body.add(DialogBody.plainMessage(Component.text("Visibility: " + (current.isPublic() ? "Public" : "Private"), NamedTextColor.GRAY)));
+        body.add(messageBody(ComponentFormatter.neutral("Visibility: " + (current.isPublic() ? "Public" : "Private"))));
         if (buttons.size() <= 2) {
-            // Only management buttons, no destinations
-            body.add(DialogBody.plainMessage(Component.text("No other teleporters available yet.", NamedTextColor.GRAY)));
+            body.add(messageBody(ComponentFormatter.neutral("No other teleporters available yet.")));
         }
 
         return Dialog.create(builder -> builder.empty()
@@ -255,7 +336,7 @@ public final class TeleporterDialogs {
     private static Dialog createTeleportDialog(DatabaseManager db, Teleporter current, Player player, LodestoneTP plugin, SortMode sortMode) {
         String playerUuid = player.getUniqueId().toString();
         boolean isOwner = playerUuid.equals(current.ownerUuid());
-        boolean isAdmin = player.isOp() || player.hasPermission("lodestonetp.admin");
+        boolean isAdmin = PermissionChecker.isAdmin(player);
 
         List<Teleporter> baseAccessible = isAdmin
                 ? db.getAllTeleporters()
@@ -284,7 +365,7 @@ public final class TeleporterDialogs {
                             if (!(audience instanceof Player p)) return;
                             p.showDialog(createTeleportDialog(db, current, p, plugin, sortMode.next()));
                         },
-                        ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
+                        CLICK_OPTIONS
                 )
         ));
 
@@ -318,70 +399,43 @@ public final class TeleporterDialogs {
             buttons.add(createGroupButton(db, current, player, plugin, sortedUncategorized, "Other Teleporters", NamedTextColor.GRAY, sortMode));
         }
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Manage Favorites", NamedTextColor.GOLD),
                 Component.text("Toggle favorite status"),
                 200,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createFavoriteManagementDialog(db, current, p, plugin, sortMode));
-                        },
-                        ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
-                )
+                () -> createFavoriteManagementDialog(db, current, player, plugin, sortMode)
         ));
 
         if (isOwner || isAdmin) {
-            buttons.add(ActionButton.create(
+            buttons.add(openDialogButton(
                     Component.text("Manage Access", NamedTextColor.GOLD),
                     Component.text("Manage visibility and whitelist"),
                     200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                p.showDialog(createAccessManagementDialog(db, current, p, plugin));
-                            },
-                            ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
-                    )
+                    () -> createAccessManagementDialog(db, current, player, plugin)
             ));
 
-            buttons.add(ActionButton.create(
+            buttons.add(openDialogButton(
                     Component.text("Delete", NamedTextColor.RED),
                     Component.text("Delete this teleporter"),
                     200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                p.showDialog(createDeleteConfirmationDialog(db, current, plugin));
-                            },
-                            ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
-                    )
+                    () -> createDeleteConfirmationDialog(db, current, plugin)
             ));
         }
 
         List<DialogBody> body = new ArrayList<>();
-        body.add(DialogBody.plainMessage(Component.text("Visibility: " + (current.isPublic() ? "Public" : "Private"), NamedTextColor.GRAY)));
-        body.add(DialogBody.plainMessage(Component.text("Sort: " + sortMode.displayName(), NamedTextColor.GRAY)));
+        body.add(messageBody(ComponentFormatter.neutral("Visibility: " + (current.isPublic() ? "Public" : "Private"))));
+        body.add(messageBody(ComponentFormatter.neutral("Sort: " + sortMode.displayName())));
         if (current.linkedTeleporterId() != null) {
             Teleporter linked = db.getTeleporter(current.linkedTeleporterId());
-            body.add(DialogBody.plainMessage(Component.text("Linked: ↔ " + (linked != null ? linked.name() : "unknown"), NamedTextColor.AQUA)));
+            body.add(messageBody(Component.text("Linked: ↔ " + (linked != null ? linked.name() : "unknown"), NamedTextColor.AQUA)));
         }
         if (buttons.size() <= 2) {
-            body.add(DialogBody.plainMessage(Component.text("No other teleporters available.", NamedTextColor.GRAY)));
+            body.add(messageBody(ComponentFormatter.neutral("No other teleporters available.")));
         }
 
-        Component title = Component.text("Teleporter: ", NamedTextColor.GOLD)
-                .append(Component.text(current.name(), NamedTextColor.WHITE));
+        Component title = teleporterTitle("Teleporter: ", current);
 
-        ActionButton exitButton = ActionButton.create(
-                Component.text("Close"),
-                Component.text("Close the menu"),
-                200,
-                DialogAction.customClick(
-                        (view, audience) -> {},
-                        ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
-                )
-        );
+        ActionButton exitButton = closeButton("Close the menu");
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(title)
@@ -402,7 +456,7 @@ public final class TeleporterDialogs {
                             if (!(audience instanceof Player p)) return;
                             p.showDialog(createGroupDialog(db, current, p, plugin, teleporters, groupName, sortMode));
                         },
-                        ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
+                    CLICK_OPTIONS
                 )
         );
     }
@@ -412,25 +466,18 @@ public final class TeleporterDialogs {
         Set<Integer> favoriteIds = db.getFavoriteIds(playerUuid);
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(noopButton(
                 Component.text((current.linkedTeleporterId() != null ? "↔ " : "") + current.name(), NamedTextColor.GRAY),
                 Component.text("You are here"),
-            160,
-                DialogAction.customClick((view, audience) -> {}, ClickCallback.Options.builder().uses(0).lifetime(ClickCallback.DEFAULT_LIFETIME).build())
+                160
         ));
 
-        buttons.add(ActionButton.create(
-            Component.text(" "),
-            Component.text(" "),
-            40,
-            DialogAction.customClick((view, audience) -> {}, ClickCallback.Options.builder().uses(0).lifetime(ClickCallback.DEFAULT_LIFETIME).build())
-        ));
+        buttons.add(noopButton(Component.text(" "), Component.text(" "), 40));
 
         for (Teleporter tp : teleporters) {
             boolean favorite = favoriteIds.contains(tp.id());
             String name = (favorite ? "★ " : "") + (tp.linkedTeleporterId() != null ? "↔ " : "") + tp.name();
-            Component tooltip = Component.text(tp.world() + " (" + tp.x() + ", " + tp.y() + ", " + tp.z() + ") — ")
-                    .append(getCostPreview(current, tp, plugin));
+            Component tooltip = teleporterTooltip(current, tp, plugin);
 
             buttons.add(ActionButton.create(
                     Component.text(name),
@@ -441,7 +488,7 @@ public final class TeleporterDialogs {
                                 if (!(audience instanceof Player p)) return;
                                 p.showDialog(createTeleportConfirmDialog(db, current, tp, p, plugin));
                             },
-                            ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
+                                CLICK_OPTIONS
                     )
             ));
 
@@ -459,27 +506,16 @@ public final class TeleporterDialogs {
                                 }
                                 p.showDialog(createGroupDialog(db, current, p, plugin, teleporters, groupName, sortMode));
                             },
-                            ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
+                                CLICK_OPTIONS
                     )
             ));
         }
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to main menu"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createTeleportDialog(db, current, p, plugin, sortMode));
-                        },
-                        ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
-                )
-        );
+        ActionButton backButton = backButton("Return to main menu", () -> createTeleportDialog(db, current, player, plugin, sortMode));
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text(groupName, NamedTextColor.AQUA))
-                .body(List.of(DialogBody.plainMessage(Component.text("Left: teleport • Right: favorite/remove", NamedTextColor.WHITE))))
+                .body(List.of(messageBody(Component.text("Left: teleport • Right: favorite/remove", NamedTextColor.WHITE))))
                         .canCloseWithEscape(true)
                         .build())
             .type(DialogType.multiAction(buttons, backButton, 2))
@@ -512,27 +548,16 @@ public final class TeleporterDialogs {
                                 }
                                 p.showDialog(createFavoriteManagementDialog(db, current, p, plugin, sortMode));
                             },
-                            ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
+                                CLICK_OPTIONS
                     )
             ));
         }
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to teleporter menu"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createTeleportDialog(db, current, p, plugin, sortMode));
-                        },
-                        ClickCallback.Options.builder().uses(1).lifetime(ClickCallback.DEFAULT_LIFETIME).build()
-                )
-        );
+        ActionButton backButton = backButton("Return to teleporter menu", () -> createTeleportDialog(db, current, player, plugin, sortMode));
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Manage Favorites", NamedTextColor.GOLD))
-                        .body(List.of(DialogBody.plainMessage(Component.text("Toggle favorites for destinations.", NamedTextColor.WHITE))))
+                .body(List.of(messageBody(Component.text("Toggle favorites for destinations.", NamedTextColor.WHITE))))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.multiAction(buttons, backButton, 1))
@@ -559,7 +584,7 @@ public final class TeleporterDialogs {
     }
 
     private static boolean hasNetworkPermission(DatabaseManager db, Teleporter tp, Player player) {
-        if (player.isOp() || player.hasPermission("lodestonetp.admin") || player.hasPermission("lodestonetp.network.bypass")) {
+        if (PermissionChecker.isAdmin(player) || player.hasPermission("lodestonetp.network.bypass")) {
             return true;
         }
         if (tp.networkId() == null) {
@@ -573,8 +598,7 @@ public final class TeleporterDialogs {
     }
 
     public static Dialog createAccessManagementDialog(DatabaseManager db, Teleporter teleporter, Player player, LodestoneTP plugin) {
-        Component title = Component.text("Access: ", NamedTextColor.GOLD)
-                .append(Component.text(teleporter.name(), NamedTextColor.WHITE));
+        Component title = teleporterTitle("Access: ", teleporter);
 
         String visibilityStatus = teleporter.isPublic() ? "Public" : "Private";
 
@@ -589,7 +613,7 @@ public final class TeleporterDialogs {
                             if (!(audience instanceof Player p)) return;
                             boolean newValue = !teleporter.isPublic();
                             db.setPublic(teleporter.id(), newValue);
-                            p.sendMessage(Component.text("Teleporter is now " + (newValue ? "Public" : "Private"), NamedTextColor.GREEN));
+                            p.sendMessage(ComponentFormatter.success("Teleporter is now " + (newValue ? "Public" : "Private")));
                             Teleporter updated = new Teleporter(
                                     teleporter.id(), teleporter.name(), teleporter.world(),
                                     teleporter.x(), teleporter.y(), teleporter.z(), teleporter.yaw(),
@@ -598,14 +622,11 @@ public final class TeleporterDialogs {
                             Dialog refreshed = createAccessManagementDialog(db, updated, p, plugin);
                             p.showDialog(refreshed);
                         },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
+                        CLICK_OPTIONS
                 )
         ));
 
-        if (player.isOp() || player.hasPermission("lodestonetp.manage_cooldowns") || player.hasPermission("lodestonetp.admin")) {
+                if (PermissionChecker.isAdmin(player) || player.hasPermission("lodestonetp.manage_cooldowns")) {
             buttons.add(ActionButton.create(
                     Component.text("Set Cooldown"),
                     Component.text(teleporter.cooldownOverride() != null ? "Override: " + teleporter.cooldownOverride() + "s" : "Use global cooldown"),
@@ -615,10 +636,7 @@ public final class TeleporterDialogs {
                                 if (!(audience instanceof Player p)) return;
                                 p.showDialog(createCooldownOverrideDialog(db, teleporter, p, plugin));
                             },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
+                                CLICK_OPTIONS
                     )
             ));
         }
@@ -632,10 +650,7 @@ public final class TeleporterDialogs {
                             if (!(audience instanceof Player p)) return;
                             p.showDialog(NetworkDialogs.createAssignNetworkDialog(db, teleporter, p, plugin));
                         },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
+                        CLICK_OPTIONS
                 )
         ));
 
@@ -651,10 +666,7 @@ public final class TeleporterDialogs {
                                 Dialog confirmDialog = createUnlinkConfirmDialog(db, teleporter, p, plugin);
                                 p.showDialog(confirmDialog);
                             },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
+                                CLICK_OPTIONS
                     )
             ));
         } else {
@@ -667,74 +679,40 @@ public final class TeleporterDialogs {
                                 if (!(audience instanceof Player p)) return;
                                 p.showDialog(createLinkTeleporterDialog(db, teleporter, p, plugin));
                             },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
+                                CLICK_OPTIONS
                     )
             ));
         }
 
-        buttons.add(ActionButton.create(
-                Component.text("Add Player"),
-                Component.text("Add a player to the whitelist"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            Dialog addDialog = createAddPlayerDialog(db, teleporter, p, plugin);
-                            p.showDialog(addDialog);
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
+        buttons.add(openDialogButton(
+            Component.text("Add Player"),
+            Component.text("Add a player to the whitelist"),
+            150,
+            () -> createAddPlayerDialog(db, teleporter, player, plugin)
         ));
 
         List<String> accessUuids = db.getAccessList(teleporter.id());
         for (String uuid : accessUuids) {
             String playerName = resolvePlayerName(uuid);
-            buttons.add(ActionButton.create(
+                buttons.add(actionButton(
                     Component.text(playerName + " \u2715", NamedTextColor.RED),
                     Component.text("Remove " + playerName + " from whitelist"),
                     200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                db.removeAccess(teleporter.id(), uuid);
-                                p.sendMessage(Component.text("Removed " + playerName + " from whitelist.", NamedTextColor.YELLOW));
-                                Dialog refreshed = createAccessManagementDialog(db, teleporter, p, plugin);
-                                p.showDialog(refreshed);
-                            },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
-                    )
-            ));
+                    (view, audience) -> {
+                    if (!(audience instanceof Player p)) return;
+                    db.removeAccess(teleporter.id(), uuid);
+                    p.sendMessage(ComponentFormatter.warning("Removed " + playerName + " from whitelist."));
+                    p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
+                    }
+                ));
         }
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to management menu"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createTeleportDialog(db, teleporter, p, plugin));
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
-        );
+            ActionButton backButton = backButton("Return to management menu", () -> createTeleportDialog(db, teleporter, player, plugin));
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(title)
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Visibility: " + visibilityStatus, NamedTextColor.GRAY))
+                                messageBody(ComponentFormatter.neutral("Visibility: " + visibilityStatus))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -746,51 +724,37 @@ public final class TeleporterDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Delete Teleporter?", NamedTextColor.RED))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Are you sure you want to delete '" + teleporter.name() + "'? This cannot be undone.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Are you sure you want to delete '" + teleporter.name() + "'? This cannot be undone.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
+                            actionButton(
                                 Component.text("Yes, Delete", NamedTextColor.RED),
                                 Component.text("Permanently delete this teleporter"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            if (db.removeTeleporter(teleporter.id())) {
-                                                p.sendMessage(
-                                                        Component.text("Teleporter ", NamedTextColor.GREEN)
-                                                                .append(Component.text("\"" + teleporter.name() + "\"", NamedTextColor.GOLD))
-                                                                .append(Component.text(" has been deleted.", NamedTextColor.GREEN))
-                                                );
-                                                plugin.getTeleportEffects().refreshTeleporterLocations();
-                                            } else {
-                                                p.sendMessage(Component.text("Failed to delete teleporter!", NamedTextColor.RED));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        ),
-                        ActionButton.create(
+                                (view, audience) -> {
+                                    if (!(audience instanceof Player p)) return;
+                                    if (db.removeTeleporter(teleporter.id())) {
+                                    p.sendMessage(ComponentFormatter.success("Teleporter ")
+                                        .append(ComponentFormatter.teleporterName(teleporter.name()))
+                                        .append(ComponentFormatter.success(" has been deleted.")));
+                                    plugin.getTeleportEffects().refreshTeleporterLocations();
+                                    } else {
+                                    p.sendMessage(ComponentFormatter.error("Failed to delete teleporter!"));
+                                    }
+                                }
+                            ),
+                            actionButton(
                                 Component.text("Cancel"),
                                 Component.text("Cancel deletion"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.sendMessage(Component.text("Deletion cancelled.", NamedTextColor.GRAY));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        )
+                                (view, audience) -> {
+                                    if (audience instanceof Player p) {
+                                    p.sendMessage(ComponentFormatter.neutral("Deletion cancelled."));
+                                    }
+                                }
+                            )
                 ))
         );
     }
@@ -799,7 +763,7 @@ public final class TeleporterDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Add Player to Whitelist", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Enter the name of the player to add.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Enter the name of the player to add.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text(PLAYER_INPUT_KEY, Component.text("Player Name"))
@@ -811,65 +775,46 @@ public final class TeleporterDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
+                        actionButton(
                                 Component.text("Add"),
                                 Component.text("Add player to whitelist"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
+                                (view, audience) -> {
+                                    if (!(audience instanceof Player p)) return;
 
-                                            String name = view.getText(PLAYER_INPUT_KEY);
-                                            if (name == null || name.isBlank()) {
-                                                p.sendMessage(Component.text("Player name cannot be empty!", NamedTextColor.RED));
-                                                return;
-                                            }
+                                    String name = view.getText(PLAYER_INPUT_KEY);
+                                    if (name == null || name.isBlank()) {
+                                        p.sendMessage(ComponentFormatter.error("Player name cannot be empty!"));
+                                        return;
+                                    }
 
-                                            name = name.trim();
-                                            @SuppressWarnings("deprecation")
-                                            OfflinePlayer target = Bukkit.getOfflinePlayer(name);
+                                    name = name.trim();
+                                    OfflinePlayer target = Bukkit.getOfflinePlayer(name);
 
-                                            if (!target.hasPlayedBefore() && !target.isOnline()) {
-                                                p.sendMessage(Component.text("Player '" + name + "' has never joined this server!", NamedTextColor.RED));
-                                                return;
-                                            }
+                                    if (!target.hasPlayedBefore() && !target.isOnline()) {
+                                        p.sendMessage(ComponentFormatter.error("Player '" + name + "' has never joined this server!"));
+                                        return;
+                                    }
 
-                                            String targetUuid = target.getUniqueId().toString();
-                                            if (db.addAccess(teleporter.id(), targetUuid)) {
-                                                p.sendMessage(Component.text("Added " + target.getName() + " to the whitelist.", NamedTextColor.GREEN));
+                                    String targetUuid = target.getUniqueId().toString();
+                                    if (db.addAccess(teleporter.id(), targetUuid)) {
+                                        p.sendMessage(ComponentFormatter.success("Added " + target.getName() + " to the whitelist."));
 
-                                                // Advancement
-                                                if (plugin.getAdvancementManager() != null) {
-                                                    plugin.getAdvancementManager().grant(p, "sharing_is_caring");
-                                                }
-                                            } else {
-                                                p.sendMessage(Component.text("Failed to add player to whitelist!", NamedTextColor.RED));
-                                            }
+                                        if (plugin.getAdvancementManager() != null) {
+                                            plugin.getAdvancementManager().grant(p, "sharing_is_caring");
+                                        }
+                                    } else {
+                                        p.sendMessage(ComponentFormatter.error("Failed to add player to whitelist!"));
+                                    }
 
-                                            Dialog refreshed = createAccessManagementDialog(db, teleporter, p, plugin);
-                                            p.showDialog(refreshed);
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                                    p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
+                                }
                         ),
-                        ActionButton.create(
+                        openDialogButton(
                                 Component.text("Cancel"),
                                 Component.text("Cancel adding player"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            Dialog accessDialog = createAccessManagementDialog(db, teleporter, p, plugin);
-                                            p.showDialog(accessDialog);
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                                () -> createAccessManagementDialog(db, teleporter, owner, plugin)
                         )
                 ))
         );
@@ -879,7 +824,7 @@ public final class TeleporterDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Private Teleporter", NamedTextColor.RED))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("This teleporter is private. Ask the owner for access.", NamedTextColor.GRAY))
+                                messageBody(Component.text("This teleporter is private. Ask the owner for access.", NamedTextColor.GRAY))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -891,27 +836,17 @@ public final class TeleporterDialogs {
      * Creates a teleport confirmation dialog showing from/to details, distance, and cost.
      */
     public static Dialog createTeleportConfirmDialog(DatabaseManager db, Teleporter from, Teleporter to, Player player, LodestoneTP plugin) {
-        // Calculate distance info
-        boolean crossWorld = !from.world().equals(to.world());
-        String distanceText;
-        if (crossWorld) {
-            distanceText = "Cross-dimension (" + from.world() + " → " + to.world() + ")";
-        } else {
-            double dx = from.x() - to.x();
-            double dz = from.z() - to.z();
-            int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
-            distanceText = distance + " blocks";
-        }
+        String distanceText = formatDistanceText(from, to);
 
         Component costPreview = getCostPreview(from, to, plugin);
 
         List<DialogBody> body = new ArrayList<>();
-        body.add(DialogBody.plainMessage(Component.text("From: ", NamedTextColor.GRAY).append(Component.text(from.name(), NamedTextColor.WHITE))
-                .append(Component.text(" (" + from.world() + " " + from.x() + ", " + from.y() + ", " + from.z() + ")", NamedTextColor.DARK_GRAY))));
-        body.add(DialogBody.plainMessage(Component.text("To: ", NamedTextColor.GRAY).append(Component.text(to.name(), NamedTextColor.WHITE))
-                .append(Component.text(" (" + to.world() + " " + to.x() + ", " + to.y() + ", " + to.z() + ")", NamedTextColor.DARK_GRAY))));
-        body.add(DialogBody.plainMessage(Component.text("Distance: ", NamedTextColor.GRAY).append(Component.text(distanceText, NamedTextColor.AQUA))));
-        body.add(DialogBody.plainMessage(Component.text("Cost: ", NamedTextColor.GRAY).append(costPreview)));
+        body.add(messageBody(Component.text("From: ", NamedTextColor.GRAY).append(Component.text(from.name(), NamedTextColor.WHITE))
+            .append(Component.text(" ")).append(teleporterCoordinates(from, NamedTextColor.DARK_GRAY))));
+        body.add(messageBody(Component.text("To: ", NamedTextColor.GRAY).append(Component.text(to.name(), NamedTextColor.WHITE))
+            .append(Component.text(" ")).append(teleporterCoordinates(to, NamedTextColor.DARK_GRAY))));
+        body.add(messageBody(Component.text("Distance: ", NamedTextColor.GRAY).append(Component.text(distanceText, NamedTextColor.AQUA))));
+        body.add(messageBody(Component.text("Cost: ", NamedTextColor.GRAY).append(costPreview)));
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Confirm Teleport", NamedTextColor.GOLD))
@@ -919,36 +854,20 @@ public final class TeleporterDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Teleport", NamedTextColor.GREEN),
-                                Component.text("Teleport to " + to.name()),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            executeTeleport(db, from, to, p, plugin, false);
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                        actionButton(
+                            Component.text("Teleport", NamedTextColor.GREEN),
+                            Component.text("Teleport to " + to.name()),
+                            150,
+                            (view, audience) -> {
+                                if (!(audience instanceof Player p)) return;
+                                executeTeleport(db, from, to, p, plugin, false);
+                            }
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            // Re-open the appropriate list dialog
-                                            p.showDialog(createTeleportDialog(db, from, p, plugin));
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                        openDialogButton(
+                            Component.text("Cancel"),
+                            Component.text("Go back"),
+                            150,
+                            () -> createTeleportDialog(db, from, player, plugin)
                         )
                 ))
         );
@@ -965,7 +884,7 @@ public final class TeleporterDialogs {
         }
 
         if (!hasNetworkPermission(db, linked, player)) {
-            player.sendMessage(Component.text("You don't have permission for this linked destination.", NamedTextColor.RED));
+            player.sendMessage(ComponentFormatter.error("You don't have permission for this linked destination."));
             return true;
         }
 
@@ -978,16 +897,16 @@ public final class TeleporterDialogs {
     }
 
     private static void executeTeleport(DatabaseManager db, Teleporter from, Teleporter to, Player player, LodestoneTP plugin, boolean linkedAutoTeleport, boolean skipWarmup) {
-        boolean isAdmin = player.isOp() || player.hasPermission("lodestonetp.admin");
+        boolean isAdmin = PermissionChecker.isAdmin(player);
 
         if (!hasNetworkPermission(db, to, player)) {
-            player.sendMessage(Component.text("You don't have permission to use this destination.", NamedTextColor.RED));
+            player.sendMessage(ComponentFormatter.error("You don't have permission to use this destination."));
             return;
         }
 
         if (!skipWarmup && !isAdmin && plugin.getWarmupManager().shouldUseWarmup(player)) {
             int warmupSeconds = plugin.getWarmupManager().getWarmupSeconds();
-            player.sendMessage(Component.text("Teleport warmup started (" + warmupSeconds + "s). Don't move.", NamedTextColor.YELLOW));
+            player.sendMessage(ComponentFormatter.warning("Teleport warmup started (" + warmupSeconds + "s). Don't move."));
             plugin.getWarmupManager().startWarmup(player, () -> executeTeleport(db, from, to, player, plugin, linkedAutoTeleport, true));
             return;
         }
@@ -996,7 +915,7 @@ public final class TeleporterDialogs {
             CooldownManager cm = plugin.getCooldownManager();
             int remaining = cm.getRemainingCooldown(player.getUniqueId(), to.cooldownOverride());
             if (remaining > 0) {
-                player.sendMessage(Component.text("Teleport on cooldown! Wait " + remaining + " seconds.", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Teleport on cooldown! Wait " + remaining + " seconds."));
                 return;
             }
         }
@@ -1007,7 +926,7 @@ public final class TeleporterDialogs {
 
         var location = to.toLocation();
         if (location == null) {
-            player.sendMessage(Component.text("World '" + to.world() + "' is not loaded!", NamedTextColor.RED));
+            player.sendMessage(ComponentFormatter.error("World '" + to.world() + "' is not loaded!"));
             return;
         }
 
@@ -1015,7 +934,7 @@ public final class TeleporterDialogs {
 
         player.teleportAsync(location).thenAccept(success -> {
             if (!success) {
-                player.sendMessage(Component.text("Teleportation failed!", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Teleportation failed!"));
                 return;
             }
 
@@ -1026,10 +945,10 @@ public final class TeleporterDialogs {
             plugin.getTeleportEffects().playArrival(player, location);
             db.recordTeleporterUse(player.getUniqueId().toString(), to.id());
 
-            Component prefix = linkedAutoTeleport
-                    ? Component.text("Linked teleport to ", NamedTextColor.GREEN)
-                    : Component.text("Teleported to ", NamedTextColor.GREEN);
-            player.sendMessage(prefix.append(Component.text("\"" + to.name() + "\"", NamedTextColor.GOLD)));
+                Component prefix = linkedAutoTeleport
+                    ? ComponentFormatter.success("Linked teleport to ")
+                    : ComponentFormatter.success("Teleported to ");
+                player.sendMessage(prefix.append(ComponentFormatter.teleporterName(to.name())));
 
             if (plugin.getAdvancementManager() != null) {
                 plugin.getAdvancementManager().grant(player, "root");
@@ -1038,9 +957,7 @@ public final class TeleporterDialogs {
                 if (isCrossWorld) {
                     plugin.getAdvancementManager().grant(player, "dimension_hopper");
                 } else {
-                    double tdx = from.x() - to.x();
-                    double tdz = from.z() - to.z();
-                    int dist = (int) Math.round(Math.sqrt(tdx * tdx + tdz * tdz));
+                    int dist = (int) Math.round(horizontalDistance(from, to));
                     if (dist >= 10000) {
                         plugin.getAdvancementManager().grant(player, "long_distance");
                     }
@@ -1073,26 +990,26 @@ public final class TeleporterDialogs {
         } else if ("xp_levels".equals(costType)) {
             int required = plugin.getConfig().getInt("cost.xp-levels", 3);
             if (player.getLevel() < required) {
-                player.sendMessage(Component.text("Not enough XP! Need " + required + " levels.", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Not enough XP! Need " + required + " levels."));
                 return false;
             }
             player.setLevel(player.getLevel() - required);
-            player.sendMessage(Component.text("Spent " + required + " XP levels.", NamedTextColor.GRAY));
+            player.sendMessage(ComponentFormatter.neutral("Spent " + required + " XP levels."));
             return true;
         } else if ("item".equals(costType)) {
             String materialName = plugin.getConfig().getString("cost.item.material", "ENDER_PEARL");
             int amount = plugin.getConfig().getInt("cost.item.amount", 1);
             Material material = Material.matchMaterial(materialName);
             if (material == null) {
-                player.sendMessage(Component.text("Teleport cost misconfigured! Contact an admin.", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Teleport cost misconfigured! Contact an admin."));
                 return false;
             }
             if (!player.getInventory().containsAtLeast(new ItemStack(material), amount)) {
-                player.sendMessage(Component.text("Not enough items! Need " + amount + "x " + material.name() + ".", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Not enough items! Need " + amount + "x " + material.name() + "."));
                 return false;
             }
             player.getInventory().removeItem(new ItemStack(material, amount));
-            player.sendMessage(Component.text("Spent " + amount + "x " + material.name() + ".", NamedTextColor.GRAY));
+            player.sendMessage(ComponentFormatter.neutral("Spent " + amount + "x " + material.name() + "."));
             return true;
         }
         return true;
@@ -1104,58 +1021,31 @@ public final class TeleporterDialogs {
      */
     private static boolean checkAndApplyDistanceCost(Player player, Teleporter from, Teleporter to, LodestoneTP plugin) {
         String currency = plugin.getConfig().getString("cost.distance.currency", "xp_levels");
-        int cost;
-
-        // Cross-world = flat cost
-        if (!from.world().equals(to.world())) {
-            cost = plugin.getConfig().getInt("cost.distance.cross-world-cost", 10);
-        } else {
-            // Same world — calculate distance and find matching tier
-            double dx = from.x() - to.x();
-            double dz = from.z() - to.z();
-            double distance = Math.sqrt(dx * dx + dz * dz);
-
-            cost = 0;
-            List<?> tiers = plugin.getConfig().getList("cost.distance.tiers");
-            if (tiers != null) {
-                for (Object tierObj : tiers) {
-                    if (tierObj instanceof java.util.Map<?, ?> tier) {
-                        Object maxDistObj = tier.get("max-distance");
-                        Object costObj = tier.get("cost");
-                        int maxDistance = maxDistObj instanceof Number n ? n.intValue() : -1;
-                        int tierCost = costObj instanceof Number n ? n.intValue() : 0;
-                        if (maxDistance == -1 || distance <= maxDistance) {
-                            cost = tierCost;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        int cost = resolveDistanceCost(from, to, plugin);
 
         if (cost <= 0) return true; // Free!
 
         // Apply the cost using the configured currency
         if ("xp_levels".equals(currency)) {
             if (player.getLevel() < cost) {
-                player.sendMessage(Component.text("Not enough XP! Need " + cost + " levels.", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Not enough XP! Need " + cost + " levels."));
                 return false;
             }
             player.setLevel(player.getLevel() - cost);
-            player.sendMessage(Component.text("Spent " + cost + " XP levels.", NamedTextColor.GRAY));
+            player.sendMessage(ComponentFormatter.neutral("Spent " + cost + " XP levels."));
         } else if ("item".equals(currency)) {
             String materialName = plugin.getConfig().getString("cost.item.material", "ENDER_PEARL");
             Material material = Material.matchMaterial(materialName);
             if (material == null) {
-                player.sendMessage(Component.text("Teleport cost misconfigured! Contact an admin.", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Teleport cost misconfigured! Contact an admin."));
                 return false;
             }
             if (!player.getInventory().containsAtLeast(new ItemStack(material), cost)) {
-                player.sendMessage(Component.text("Not enough items! Need " + cost + "x " + material.name() + ".", NamedTextColor.RED));
+                player.sendMessage(ComponentFormatter.error("Not enough items! Need " + cost + "x " + material.name() + "."));
                 return false;
             }
             player.getInventory().removeItem(new ItemStack(material, cost));
-            player.sendMessage(Component.text("Spent " + cost + "x " + material.name() + ".", NamedTextColor.GRAY));
+            player.sendMessage(ComponentFormatter.neutral("Spent " + cost + "x " + material.name() + "."));
         }
         return true;
     }
@@ -1173,32 +1063,7 @@ public final class TeleporterDialogs {
 
         if ("distance".equals(costType)) {
             String currency = plugin.getConfig().getString("cost.distance.currency", "xp_levels");
-            int cost;
-
-            if (!from.world().equals(to.world())) {
-                cost = plugin.getConfig().getInt("cost.distance.cross-world-cost", 10);
-            } else {
-                double dx = from.x() - to.x();
-                double dz = from.z() - to.z();
-                double distance = Math.sqrt(dx * dx + dz * dz);
-
-                cost = 0;
-                List<?> tiers = plugin.getConfig().getList("cost.distance.tiers");
-                if (tiers != null) {
-                    for (Object tierObj : tiers) {
-                        if (tierObj instanceof java.util.Map<?, ?> tier) {
-                            Object maxDistObj = tier.get("max-distance");
-                            Object costObj = tier.get("cost");
-                            int maxDistance = maxDistObj instanceof Number n ? n.intValue() : -1;
-                            int tierCost = costObj instanceof Number n ? n.intValue() : 0;
-                            if (maxDistance == -1 || distance <= maxDistance) {
-                                cost = tierCost;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            int cost = resolveDistanceCost(from, to, plugin);
 
             if (cost <= 0) return Component.text("Free", NamedTextColor.GREEN);
             return formatCostPreview(cost, currency, plugin);
@@ -1230,8 +1095,8 @@ public final class TeleporterDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Set Cooldown Override", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set a custom cooldown for this teleporter.", NamedTextColor.WHITE)),
-                                DialogBody.plainMessage(Component.text("Leave empty to use global cooldown (" + globalValue + "s)", NamedTextColor.GRAY))
+                                messageBody(Component.text("Set a custom cooldown for this teleporter.", NamedTextColor.WHITE)),
+                                messageBody(Component.text("Leave empty to use global cooldown (" + globalValue + "s)", NamedTextColor.GRAY))
                         ))
                         .inputs(List.of(
                                 DialogInput.text("cooldown_value", Component.text("Cooldown Seconds"))
@@ -1243,65 +1108,48 @@ public final class TeleporterDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
+                        actionButton(
                                 Component.text("Save"),
                                 Component.text("Save the cooldown override"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            String input = view.getText("cooldown_value");
-                                            Integer newOverride = null;
-                                            if (input != null && !input.isBlank()) {
-                                                try {
-                                                    int value = Integer.parseInt(input.trim());
-                                                    if (value < 0) {
-                                                        p.sendMessage(Component.text("Cooldown cannot be negative!", NamedTextColor.RED));
-                                                        return;
-                                                    }
-                                                    newOverride = value;
-                                                } catch (NumberFormatException e) {
-                                                    p.sendMessage(Component.text("Invalid number! Enter a non-negative integer.", NamedTextColor.RED));
-                                                    return;
-                                                }
+                                (view, audience) -> {
+                                    if (!(audience instanceof Player p)) return;
+                                    String input = view.getText("cooldown_value");
+                                    Integer newOverride = null;
+                                    if (input != null && !input.isBlank()) {
+                                        try {
+                                            int value = Integer.parseInt(input.trim());
+                                            if (value < 0) {
+                                                p.sendMessage(Component.text("Cooldown cannot be negative!", NamedTextColor.RED));
+                                                return;
                                             }
-                                            if (db.setCooldownOverride(teleporter.id(), newOverride)) {
-                                                String message = newOverride != null
-                                                        ? "Cooldown override set to " + newOverride + " seconds"
-                                                        : "Cooldown override cleared (using global)";
-                                                p.sendMessage(Component.text(message, NamedTextColor.GREEN));
-                                                Teleporter updated = new Teleporter(
-                                                        teleporter.id(), teleporter.name(), teleporter.world(),
-                                                        teleporter.x(), teleporter.y(), teleporter.z(), teleporter.yaw(),
-                                                        teleporter.ownerUuid(), teleporter.isPublic(), newOverride, teleporter.networkId(), teleporter.linkedTeleporterId()
-                                                );
-                                                Dialog refreshed = createAccessManagementDialog(db, updated, p, plugin);
-                                                p.showDialog(refreshed);
-                                            } else {
-                                                p.sendMessage(Component.text("Failed to update cooldown override!", NamedTextColor.RED));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                                            newOverride = value;
+                                        } catch (NumberFormatException e) {
+                                            p.sendMessage(Component.text("Invalid number! Enter a non-negative integer.", NamedTextColor.RED));
+                                            return;
+                                        }
+                                    }
+                                    if (db.setCooldownOverride(teleporter.id(), newOverride)) {
+                                        String message = newOverride != null
+                                                ? "Cooldown override set to " + newOverride + " seconds"
+                                                : "Cooldown override cleared (using global)";
+                                        p.sendMessage(Component.text(message, NamedTextColor.GREEN));
+                                        Teleporter updated = new Teleporter(
+                                                teleporter.id(), teleporter.name(), teleporter.world(),
+                                                teleporter.x(), teleporter.y(), teleporter.z(), teleporter.yaw(),
+                                                teleporter.ownerUuid(), teleporter.isPublic(), newOverride, teleporter.networkId(), teleporter.linkedTeleporterId()
+                                        );
+                                        p.showDialog(createAccessManagementDialog(db, updated, p, plugin));
+                                    } else {
+                                        p.sendMessage(ComponentFormatter.error("Failed to update cooldown override!"));
+                                    }
+                                }
                         ),
-                        ActionButton.create(
+                        openDialogButton(
                                 Component.text("Cancel"),
                                 Component.text("Cancel and go back"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
+                                () -> createAccessManagementDialog(db, teleporter, player, plugin)
                         )
                 ))
         );
@@ -1318,26 +1166,20 @@ public final class TeleporterDialogs {
             Component tooltip = Component.text(tp.world() + " (" + tp.x() + ", " + tp.y() + ", " + tp.z() + ")");
 
             final Teleporter finalTp = tp;
-            buttons.add(ActionButton.create(
+            buttons.add(actionButton(
                     Component.text(tp.name()),
                     tooltip,
                     200,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                if (db.setLinkedTeleporter(teleporter.id(), finalTp.id()) &&
-                                    db.setLinkedTeleporter(finalTp.id(), teleporter.id())) {
-                                    p.sendMessage(Component.text("Teleporters linked successfully!", NamedTextColor.GREEN));
-                                    p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
-                                } else {
-                                    p.sendMessage(Component.text("Failed to link teleporters!", NamedTextColor.RED));
-                                }
-                            },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
-                    )
+                    (view, audience) -> {
+                        if (!(audience instanceof Player p)) return;
+                        if (db.setLinkedTeleporter(teleporter.id(), finalTp.id())
+                                && db.setLinkedTeleporter(finalTp.id(), teleporter.id())) {
+                            p.sendMessage(ComponentFormatter.success("Teleporters linked successfully!"));
+                            p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
+                        } else {
+                            p.sendMessage(ComponentFormatter.error("Failed to link teleporters!"));
+                        }
+                    }
             ));
         }
 
@@ -1348,7 +1190,7 @@ public final class TeleporterDialogs {
             return Dialog.create(builder -> builder.empty()
                     .base(DialogBase.builder(title)
                             .body(List.of(
-                                    DialogBody.plainMessage(Component.text("No available teleporters to link.", NamedTextColor.GRAY))
+                                        messageBody(Component.text("No available teleporters to link.", NamedTextColor.GRAY))
                             ))
                             .canCloseWithEscape(true)
                             .build())
@@ -1356,27 +1198,17 @@ public final class TeleporterDialogs {
             );
         }
 
-        ActionButton exitButton = ActionButton.create(
-                Component.text("Cancel"),
-                Component.text("Cancel linking"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
-                            }
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
-        );
+                        ActionButton exitButton = openDialogButton(
+                            Component.text("Cancel"),
+                            Component.text("Cancel linking"),
+                            150,
+                            () -> createAccessManagementDialog(db, teleporter, player, plugin)
+                        );
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(title)
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Select a teleporter to link with.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Select a teleporter to link with.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -1391,48 +1223,32 @@ public final class TeleporterDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Unlink Teleporters", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Are you sure you want to unlink " + teleporter.name() + " from " + linkedName + "?", NamedTextColor.WHITE))
+                                messageBody(Component.text("Are you sure you want to unlink " + teleporter.name() + " from " + linkedName + "?", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
+                            actionButton(
                                 Component.text("Unlink"),
                                 Component.text("Unlink these teleporters"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            int linkedId = teleporter.linkedTeleporterId();
-                                            if (linkedId > 0) {
-                                                db.setLinkedTeleporter(teleporter.id(), null);
-                                                db.setLinkedTeleporter(linkedId, null);
-                                                p.sendMessage(Component.text("Teleporters unlinked!", NamedTextColor.GREEN));
-                                            }
-                                            p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        ),
-                        ActionButton.create(
+                                (view, audience) -> {
+                                    if (!(audience instanceof Player p)) return;
+                                    int linkedId = teleporter.linkedTeleporterId();
+                                    if (linkedId > 0) {
+                                    db.setLinkedTeleporter(teleporter.id(), null);
+                                    db.setLinkedTeleporter(linkedId, null);
+                                    p.sendMessage(ComponentFormatter.success("Teleporters unlinked!"));
+                                    }
+                                    p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
+                                }
+                            ),
+                            openDialogButton(
                                 Component.text("Cancel"),
                                 Component.text("Keep teleporters linked"),
                                 150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createAccessManagementDialog(db, teleporter, p, plugin));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        )
+                                () -> createAccessManagementDialog(db, teleporter, player, plugin)
+                            )
                 ))
         );
     }

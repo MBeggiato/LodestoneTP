@@ -22,13 +22,11 @@ public class AdvancementManager {
     private static final String NAMESPACE = "lodestonetp";
     private static final String CRITERIA = "requirement";
 
-    private final LodestoneTP plugin;
     private final Logger logger;
     private final List<NamespacedKey> registeredKeys = new ArrayList<>();
     private final Map<String, Advancement> advancementCache = new HashMap<>();
 
     public AdvancementManager(LodestoneTP plugin) {
-        this.plugin = plugin;
         this.logger = plugin.getLogger();
     }
 

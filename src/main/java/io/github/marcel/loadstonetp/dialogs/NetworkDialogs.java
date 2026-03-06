@@ -4,6 +4,7 @@ import io.github.marcel.loadstonetp.LodestoneTP;
 import io.github.marcel.loadstonetp.db.DatabaseManager;
 import io.github.marcel.loadstonetp.model.Network;
 import io.github.marcel.loadstonetp.model.Teleporter;
+import io.github.marcel.loadstonetp.utils.ComponentFormatter;
 import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
@@ -16,10 +17,68 @@ import net.kyori.adventure.text.event.ClickCallback;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.Player;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 public final class NetworkDialogs {
+
+    private static final ClickCallback.Options CLICK_OPTIONS = ClickCallback.Options.builder()
+            .uses(1)
+            .lifetime(Duration.ofMinutes(5))
+            .build();
+
+    private NetworkDialogs() {}
+
+    private static ActionButton openDialogButton(Component label, Component tooltip, int width, Supplier<Dialog> dialogSupplier) {
+        return ActionButton.create(
+                label,
+                tooltip,
+                width,
+                DialogAction.customClick(
+                        (view, audience) -> {
+                            if (audience instanceof Player player) {
+                                player.showDialog(dialogSupplier.get());
+                            }
+                        },
+                        CLICK_OPTIONS
+                )
+        );
+    }
+
+    private static ActionButton actionButton(Component label, Component tooltip, int width, DialogAction action) {
+        return ActionButton.create(label, tooltip, width, action);
+    }
+
+    private static ActionButton backButton(String tooltip, Supplier<Dialog> dialogSupplier) {
+        return openDialogButton(Component.text("Back"), Component.text(tooltip), 150, dialogSupplier);
+    }
+
+    private static ActionButton cancelButton(String tooltip, Supplier<Dialog> dialogSupplier) {
+        return openDialogButton(Component.text("Cancel"), Component.text(tooltip), 150, dialogSupplier);
+    }
+
+    private static ActionButton closeButton(String tooltip) {
+        return actionButton(
+                Component.text("Close"),
+                Component.text(tooltip),
+                150,
+                DialogAction.customClick((view, audience) -> {}, CLICK_OPTIONS)
+        );
+    }
+
+    private static ActionButton saveButton(Component tooltip, int width, DialogAction action) {
+        return actionButton(Component.text("Save"), tooltip, width, action);
+    }
+
+    private static ActionButton deleteButton(String label, String tooltip, int width, DialogAction action) {
+        return actionButton(Component.text(label, NamedTextColor.RED), Component.text(tooltip), width, action);
+    }
+
+    private static DialogBody messageBody(Component component) {
+        return DialogBody.plainMessage(component);
+    }
 
     public static Dialog createNetworkManagementDialog(DatabaseManager db, Player player, LodestoneTP plugin) {
         String playerUuid = player.getUniqueId().toString();
@@ -30,83 +89,43 @@ public final class NetworkDialogs {
         List<ActionButton> buttons = new ArrayList<>();
 
         for (Network network : networks) {
-            buttons.add(ActionButton.create(
+            buttons.add(openDialogButton(
                     Component.text(network.name()),
                     buildNetworkSummary(network),
                     150,
-                    DialogAction.customClick(
-                            (view, audience) -> {
-                                if (!(audience instanceof Player p)) return;
-                                p.showDialog(createNetworkActionDialog(db, network, p, plugin));
-                            },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
-                    )
+                    () -> createNetworkActionDialog(db, network, player, plugin)
             ));
         }
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("+ Create Network"),
                 Component.text("Create a new network to organize teleporters"),
                 150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createNetworkDialog(db, playerUuid, plugin));
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
+                () -> createNetworkDialog(db, playerUuid, plugin)
         ));
 
-        ActionButton exitButton = ActionButton.create(
-                Component.text("Close"),
-                Component.text("Close network management"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {},
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
-        );
+        ActionButton exitButton = closeButton("Close network management");
 
         if (networks.isEmpty()) {
             return Dialog.create(builder -> builder.empty()
                     .base(DialogBase.builder(title)
-                            .body(List.of(
-                                    DialogBody.plainMessage(Component.text("You haven't created any networks yet.", NamedTextColor.GRAY))
-                            ))
+                            .body(List.of(messageBody(ComponentFormatter.neutral("You haven't created any networks yet."))))
                             .canCloseWithEscape(true)
                             .build())
                     .type(DialogType.multiAction(List.of(
-                            ActionButton.create(
+                            openDialogButton(
                                     Component.text("+ Create Network"),
                                     Component.text("Create a new network to organize teleporters"),
                                     150,
-                                    DialogAction.customClick(
-                                            (view, audience) -> {
-                                                if (!(audience instanceof Player p)) return;
-                                                p.showDialog(createNetworkDialog(db, playerUuid, plugin));
-                                            },
-                                            ClickCallback.Options.builder()
-                                                    .uses(1)
-                                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                    .build()
-                                    )
-                    )), exitButton, 1))
+                                    () -> createNetworkDialog(db, playerUuid, plugin)
+                            )), exitButton, 1))
             );
         }
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(title)
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Select a network to manage.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Select a network to manage.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -118,8 +137,8 @@ public final class NetworkDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Create Network", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Create a new network to organize your teleporters.", NamedTextColor.WHITE)),
-                                DialogBody.plainMessage(Component.text("Leave world filter empty to allow all worlds.", NamedTextColor.GRAY))
+                                messageBody(Component.text("Create a new network to organize your teleporters.", NamedTextColor.WHITE)),
+                                messageBody(ComponentFormatter.neutral("Leave world filter empty to allow all worlds."))
                         ))
                         .inputs(List.of(
                                 DialogInput.text("network_name", Component.text("Network Name"))
@@ -136,7 +155,7 @@ public final class NetworkDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
+                        actionButton(
                                 Component.text("Create"),
                                 Component.text("Create the network"),
                                 150,
@@ -147,7 +166,7 @@ public final class NetworkDialogs {
                                             String worldFilter = view.getText("world_filter");
 
                                             if (name == null || name.isBlank()) {
-                                                p.sendMessage(Component.text("Network name cannot be empty!", NamedTextColor.RED));
+                                                                                                p.sendMessage(ComponentFormatter.error("Network name cannot be empty!"));
                                                 return;
                                             }
 
@@ -156,34 +175,28 @@ public final class NetworkDialogs {
                                             }
 
                                             if (db.addNetwork(name.trim(), ownerUuid, worldFilter)) {
-                                                p.sendMessage(Component.text("Network \"" + name.trim() + "\" created!", NamedTextColor.GREEN));
+                                                                                                p.sendMessage(ComponentFormatter.success("Network \"" + name.trim() + "\" created!"));
                                                 p.showDialog(createNetworkManagementDialog(db, p, plugin));
                                             } else {
-                                                p.sendMessage(Component.text("Failed to create network (name may be taken)!", NamedTextColor.RED));
+                                                                                                p.sendMessage(ComponentFormatter.error("Failed to create network (name may be taken)!"));
                                             }
                                         },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
+                                                                                CLICK_OPTIONS
                                 )
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel network creation"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createNetworkManagementDialog(db, p, plugin));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        )
+                                                actionButton(
+                                                                Component.text("Cancel"),
+                                                                Component.text("Cancel network creation"),
+                                                                150,
+                                                                DialogAction.customClick(
+                                                                                (view, audience) -> {
+                                                                                        if (audience instanceof Player p) {
+                                                                                                p.showDialog(createNetworkManagementDialog(db, p, plugin));
+                                                                                        }
+                                                                                },
+                                                                                CLICK_OPTIONS
+                                                                )
+                                                )
                 ))
         );
     }
@@ -194,76 +207,35 @@ public final class NetworkDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Rename"),
                 Component.text("Change the network name"),
                 150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createRenameNetworkDialog(db, network, p, plugin));
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
+                () -> createRenameNetworkDialog(db, network, player, plugin)
         ));
 
-        buttons.add(ActionButton.create(
+        buttons.add(openDialogButton(
                 Component.text("Set Permission"),
                 network.permissionNode() != null && !network.permissionNode().isBlank()
                         ? Component.text("Current: " + network.permissionNode())
                         : Component.text("No permission required"),
                 150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createPermissionNodeDialog(db, network, p, plugin));
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
+                () -> createPermissionNodeDialog(db, network, player, plugin)
         ));
 
-        buttons.add(ActionButton.create(
-                Component.text("Delete Network"),
+        buttons.add(openDialogButton(
+                Component.text("Delete Network", NamedTextColor.RED),
                 Component.text("Permanently delete this network", NamedTextColor.RED),
                 150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createDeleteNetworkDialog(db, network, p, plugin));
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
+                () -> createDeleteNetworkDialog(db, network, player, plugin)
         ));
 
-        ActionButton backButton = ActionButton.create(
-                Component.text("Back"),
-                Component.text("Return to networks list"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (!(audience instanceof Player p)) return;
-                            p.showDialog(createNetworkManagementDialog(db, p, plugin));
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
-        );
+        ActionButton backButton = backButton("Return to networks list", () -> createNetworkManagementDialog(db, player, plugin));
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(title)
                         .body(List.of(
-                                DialogBody.plainMessage(
+                                messageBody(
                                         buildNetworkSummary(network).color(NamedTextColor.GRAY)
                                 )
                         ))
@@ -277,7 +249,7 @@ public final class NetworkDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Rename Network", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Rename the network.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Rename the network.", NamedTextColor.WHITE))
                         ))
                         .inputs(List.of(
                                 DialogInput.text("new_name", Component.text("New Network Name"))
@@ -289,8 +261,7 @@ public final class NetworkDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
+                        saveButton(
                                 Component.text("Save the new name"),
                                 150,
                                 DialogAction.customClick(
@@ -299,43 +270,25 @@ public final class NetworkDialogs {
                                             String newName = view.getText("new_name");
 
                                             if (newName == null || newName.isBlank()) {
-                                                p.sendMessage(Component.text("Network name cannot be empty!", NamedTextColor.RED));
+                                                p.sendMessage(ComponentFormatter.error("Network name cannot be empty!"));
                                                 return;
                                             }
 
                                             if (db.renameNetwork(network.id(), newName.trim())) {
-                                                p.sendMessage(Component.text("Network renamed to \"" + newName.trim() + "\"!", NamedTextColor.GREEN));
+                                                p.sendMessage(ComponentFormatter.success("Network renamed to \"" + newName.trim() + "\"!"));
                                                 Network updated = new Network(
                                                         network.id(), newName.trim(),
                                                         network.ownerUuid(), network.worldFilter(), network.permissionNode()
                                                 );
                                                 p.showDialog(createNetworkActionDialog(db, updated, p, plugin));
                                             } else {
-                                                p.sendMessage(Component.text("Failed to rename network (name may be taken)!", NamedTextColor.RED));
+                                                p.sendMessage(ComponentFormatter.error("Failed to rename network (name may be taken)!"));
                                             }
                                         },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
+                                        CLICK_OPTIONS
                                 )
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createNetworkActionDialog(db, network, p, plugin));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        )
+                        cancelButton("Cancel and go back", () -> createNetworkActionDialog(db, network, player, plugin))
                 ))
         );
     }
@@ -344,48 +297,30 @@ public final class NetworkDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Delete Network?", NamedTextColor.RED))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Are you sure you want to delete '" + network.name() + "'?", NamedTextColor.WHITE)),
-                                DialogBody.plainMessage(Component.text("Teleporters in this network will be unassigned.", NamedTextColor.RED))
+                                messageBody(Component.text("Are you sure you want to delete '" + network.name() + "'?", NamedTextColor.WHITE)),
+                                messageBody(ComponentFormatter.error("Teleporters in this network will be unassigned."))
                         ))
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Yes, Delete", NamedTextColor.RED),
-                                Component.text("Permanently delete the network"),
+                        deleteButton(
+                                "Yes, Delete",
+                                "Permanently delete the network",
                                 150,
                                 DialogAction.customClick(
                                         (view, audience) -> {
                                             if (!(audience instanceof Player p)) return;
                                             if (db.deleteNetwork(network.id())) {
-                                                p.sendMessage(Component.text("Network deleted successfully!", NamedTextColor.GREEN));
+                                                p.sendMessage(ComponentFormatter.success("Network deleted successfully!"));
                                                 p.showDialog(createNetworkManagementDialog(db, p, plugin));
                                             } else {
-                                                p.sendMessage(Component.text("Failed to delete network!", NamedTextColor.RED));
+                                                p.sendMessage(ComponentFormatter.error("Failed to delete network!"));
                                             }
                                         },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
+                                        CLICK_OPTIONS
                                 )
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel deletion"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (audience instanceof Player p) {
-                                                p.showDialog(createNetworkActionDialog(db, network, p, plugin));
-                                            }
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        )
+                        cancelButton("Cancel deletion", () -> createNetworkActionDialog(db, network, player, plugin))
                 ))
         );
     }
@@ -399,7 +334,7 @@ public final class NetworkDialogs {
 
         List<ActionButton> buttons = new ArrayList<>();
 
-        buttons.add(ActionButton.create(
+        buttons.add(actionButton(
                 Component.text("None"),
                 Component.text("Remove from network"),
                 150,
@@ -407,7 +342,7 @@ public final class NetworkDialogs {
                         (view, audience) -> {
                             if (!(audience instanceof Player p)) return;
                             if (db.setTeleporterNetwork(teleporter.id(), null)) {
-                                p.sendMessage(Component.text("Teleporter removed from network!", NamedTextColor.GREEN));
+                                p.sendMessage(ComponentFormatter.success("Teleporter removed from network!"));
                                 Teleporter updated = new Teleporter(
                                         teleporter.id(), teleporter.name(), teleporter.world(),
                                         teleporter.x(), teleporter.y(), teleporter.z(), teleporter.yaw(),
@@ -416,18 +351,15 @@ public final class NetworkDialogs {
                                 );
                                 p.showDialog(TeleporterDialogs.createAccessManagementDialog(db, updated, p, plugin));
                             } else {
-                                p.sendMessage(Component.text("Failed to update teleporter!", NamedTextColor.RED));
+                                                                p.sendMessage(ComponentFormatter.error("Failed to update teleporter!"));
                             }
                         },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
+                                                CLICK_OPTIONS
                 )
         ));
 
         for (Network network : networks) {
-            buttons.add(ActionButton.create(
+                        buttons.add(actionButton(
                     Component.text(network.name()),
                     buildNetworkSummary(network),
                     150,
@@ -435,7 +367,7 @@ public final class NetworkDialogs {
                             (view, audience) -> {
                                 if (!(audience instanceof Player p)) return;
                                 if (db.setTeleporterNetwork(teleporter.id(), network.id())) {
-                                    p.sendMessage(Component.text("Teleporter assigned to network \"" + network.name() + "\"!", NamedTextColor.GREEN));
+                                                                        p.sendMessage(ComponentFormatter.success("Teleporter assigned to network \"" + network.name() + "\"!"));
                                     Teleporter updated = new Teleporter(
                                             teleporter.id(), teleporter.name(), teleporter.world(),
                                             teleporter.x(), teleporter.y(), teleporter.z(), teleporter.yaw(),
@@ -444,38 +376,23 @@ public final class NetworkDialogs {
                                     );
                                     p.showDialog(TeleporterDialogs.createAccessManagementDialog(db, updated, p, plugin));
                                 } else {
-                                    p.sendMessage(Component.text("Failed to update teleporter!", NamedTextColor.RED));
+                                    p.sendMessage(ComponentFormatter.error("Failed to update teleporter!"));
                                 }
                             },
-                            ClickCallback.Options.builder()
-                                    .uses(1)
-                                    .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                    .build()
+                            CLICK_OPTIONS
                     )
             ));
         }
 
-        ActionButton cancelButton = ActionButton.create(
-                Component.text("Cancel"),
-                Component.text("Cancel assignment"),
-                150,
-                DialogAction.customClick(
-                        (view, audience) -> {
-                            if (audience instanceof Player p) {
-                                p.showDialog(TeleporterDialogs.createAccessManagementDialog(db, teleporter, p, plugin));
-                            }
-                        },
-                        ClickCallback.Options.builder()
-                                .uses(1)
-                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                .build()
-                )
+        ActionButton cancelButton = cancelButton(
+                "Cancel assignment",
+                () -> TeleporterDialogs.createAccessManagementDialog(db, teleporter, player, plugin)
         );
 
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(title)
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Select a network to assign this teleporter to.", NamedTextColor.WHITE))
+                                messageBody(Component.text("Select a network to assign this teleporter to.", NamedTextColor.WHITE))
                         ))
                         .canCloseWithEscape(true)
                         .build())
@@ -488,8 +405,8 @@ public final class NetworkDialogs {
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Network Permission", NamedTextColor.GOLD))
                         .body(List.of(
-                                DialogBody.plainMessage(Component.text("Set a permission node required to use this network.", NamedTextColor.WHITE)),
-                                DialogBody.plainMessage(Component.text("Leave empty to allow everyone who can access the teleporter.", NamedTextColor.GRAY))
+                                messageBody(Component.text("Set a permission node required to use this network.", NamedTextColor.WHITE)),
+                                messageBody(ComponentFormatter.neutral("Leave empty to allow everyone who can access the teleporter."))
                         ))
                         .inputs(List.of(
                                 DialogInput.text("permission_node", Component.text("Permission Node"))
@@ -501,8 +418,7 @@ public final class NetworkDialogs {
                         .canCloseWithEscape(true)
                         .build())
                 .type(DialogType.confirmation(
-                        ActionButton.create(
-                                Component.text("Save"),
+                        saveButton(
                                 Component.text("Save network permission"),
                                 150,
                                 DialogAction.customClick(
@@ -513,7 +429,7 @@ public final class NetworkDialogs {
                                                 permissionNode = null;
                                             }
                                             if (db.setNetworkPermissionNode(network.id(), permissionNode)) {
-                                                p.sendMessage(Component.text("Network permission updated.", NamedTextColor.GREEN));
+                                                                                                p.sendMessage(ComponentFormatter.success("Network permission updated."));
                                                 Network updated = new Network(
                                                         network.id(),
                                                         network.name(),
@@ -523,30 +439,13 @@ public final class NetworkDialogs {
                                                 );
                                                 p.showDialog(createNetworkActionDialog(db, updated, p, plugin));
                                             } else {
-                                                p.sendMessage(Component.text("Failed to update network permission.", NamedTextColor.RED));
+                                                p.sendMessage(ComponentFormatter.error("Failed to update network permission."));
                                             }
                                         },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
+                                        CLICK_OPTIONS
                                 )
                         ),
-                        ActionButton.create(
-                                Component.text("Cancel"),
-                                Component.text("Cancel and go back"),
-                                150,
-                                DialogAction.customClick(
-                                        (view, audience) -> {
-                                            if (!(audience instanceof Player p)) return;
-                                            p.showDialog(createNetworkActionDialog(db, network, p, plugin));
-                                        },
-                                        ClickCallback.Options.builder()
-                                                .uses(1)
-                                                .lifetime(ClickCallback.DEFAULT_LIFETIME)
-                                                .build()
-                                )
-                        )
+                        cancelButton("Cancel and go back", () -> createNetworkActionDialog(db, network, player, plugin))
                 ))
         );
     }

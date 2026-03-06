@@ -5,6 +5,8 @@ import io.github.marcel.loadstonetp.db.DatabaseManager;
 import io.github.marcel.loadstonetp.dialogs.TeleporterDialogs;
 import io.github.marcel.loadstonetp.effects.StructureHologram;
 import io.github.marcel.loadstonetp.model.Teleporter;
+import io.github.marcel.loadstonetp.utils.ComponentFormatter;
+import io.github.marcel.loadstonetp.utils.PermissionChecker;
 import io.papermc.paper.dialog.Dialog;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -46,14 +48,14 @@ public class LodestoneInteractListener implements Listener {
         // If hologram already active, dismiss it (second Shift+Click)
         if (structureHologram.hasActive(player)) {
             structureHologram.removeForPlayer(player);
-            player.sendMessage(Component.text("Hologram hidden.", NamedTextColor.GRAY));
+            player.sendMessage(ComponentFormatter.neutral("Hologram hidden."));
             return;
         }
 
         // Show structure preview on Shift+Click
         structureHologram.showTeleporterStructure(player, event.getClickedBlock().getLocation());
 
-        player.sendMessage(Component.text("Hologram shown. Shift+Click again to hide.", NamedTextColor.AQUA));
+        player.sendMessage(ComponentFormatter.info("Hologram shown. Shift+Click again to hide."));
     }
 
     @EventHandler
@@ -80,8 +82,8 @@ public class LodestoneInteractListener implements Listener {
             structureHologram.removeForPlayer(player);
         }
 
-        if (!player.hasPermission("lodestonetp.use")) {
-            player.sendMessage(Component.text("You don't have permission to use teleporters!", NamedTextColor.RED));
+        if (!PermissionChecker.canUse(player)) {
+            player.sendMessage(ComponentFormatter.error("You don't have permission to use teleporters!"));
             return;
         }
 
@@ -98,12 +100,12 @@ public class LodestoneInteractListener implements Listener {
 
             String playerUuid = player.getUniqueId().toString();
             boolean isOwner = playerUuid.equals(existing.ownerUuid());
-            boolean isAdmin = player.isOp() || player.hasPermission("lodestonetp.admin");
+            boolean isAdmin = PermissionChecker.isAdmin(player);
             boolean isPublic = existing.isPublic();
             boolean hasAccess = db.hasAccess(existing.id(), playerUuid);
 
             boolean hasNetworkPermission = true;
-            if (!isAdmin && !(player.isOp() || player.hasPermission("lodestonetp.network.bypass")) && existing.networkId() != null) {
+            if (!isAdmin && !PermissionChecker.hasPermission(player, "network.bypass") && existing.networkId() != null) {
                 io.github.marcel.loadstonetp.model.Network network = db.getNetwork(existing.networkId());
                 if (network != null && network.permissionNode() != null && !network.permissionNode().isBlank()) {
                     hasNetworkPermission = player.hasPermission(network.permissionNode());
@@ -125,14 +127,14 @@ public class LodestoneInteractListener implements Listener {
 
         if (!validStructure) {
             player.sendMessage(
-                    Component.text("Invalid teleporter setup! ", NamedTextColor.RED)
-                            .append(Component.text("Place polished blackstone bricks above and below the lodestone.", NamedTextColor.GRAY))
+                    ComponentFormatter.error("Invalid teleporter setup! ")
+                            .append(ComponentFormatter.neutral("Place polished blackstone bricks above and below the lodestone."))
             );
             return;
         }
 
-        if (!player.hasPermission("lodestonetp.create")) {
-            player.sendMessage(Component.text("You don't have permission to create teleporters!", NamedTextColor.RED));
+        if (!PermissionChecker.canCreate(player)) {
+            player.sendMessage(ComponentFormatter.error("You don't have permission to create teleporters!"));
             return;
         }
 
@@ -269,9 +271,9 @@ public class LodestoneInteractListener implements Listener {
         plugin.getTeleportEffects().removeLightBlock(teleporter);
         plugin.getTeleportEffects().refreshTeleporterLocations();
         player.sendMessage(
-                Component.text("Teleporter ", NamedTextColor.RED)
-                        .append(Component.text("\"" + teleporter.name() + "\"", NamedTextColor.GOLD))
-                        .append(Component.text(" has been destroyed!", NamedTextColor.RED))
+            ComponentFormatter.error("Teleporter ")
+                .append(ComponentFormatter.teleporterName(teleporter.name()))
+                .append(ComponentFormatter.error(" has been destroyed!"))
         );
     }
 

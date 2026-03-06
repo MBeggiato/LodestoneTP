@@ -3,10 +3,11 @@ package io.github.marcel.loadstonetp.commands;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.github.marcel.loadstonetp.LodestoneTP;
+import io.github.marcel.loadstonetp.utils.ComponentFormatter;
+import io.github.marcel.loadstonetp.utils.PermissionChecker;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.entity.Player;
 
 public final class ReloadCommand {
 
@@ -14,13 +15,9 @@ public final class ReloadCommand {
 
     public static LiteralArgumentBuilder<CommandSourceStack> buildNode(LodestoneTP plugin) {
         return Commands.literal("reload")
-                .requires(source -> {
-                    // Allow access if sender is OP OR has the permission
-                    if (source.getSender() instanceof org.bukkit.entity.Player player) {
-                        return player.isOp() || player.hasPermission("lodestonetp.admin");
-                    }
-                    return source.getSender().hasPermission("lodestonetp.admin");
-                })
+                .requires(source -> source.getSender() instanceof Player player
+                        ? PermissionChecker.isAdmin(player)
+                        : source.getSender().hasPermission("lodestonetp.admin"))
                 .executes(ctx -> {
                     CommandSourceStack source = ctx.getSource();
 
@@ -31,9 +28,7 @@ public final class ReloadCommand {
                     plugin.getTeleportEffects().startAmbientLoop();
                     plugin.getTeleportEffects().restoreAllLightBlocks();
 
-                    source.getSender().sendMessage(
-                            Component.text("LodestoneTP config reloaded!", NamedTextColor.GREEN)
-                    );
+                        source.getSender().sendMessage(ComponentFormatter.success("LodestoneTP config reloaded!"));
                     plugin.getLogger().info("Config reloaded by " + source.getSender().getName());
 
                     return Command.SINGLE_SUCCESS;

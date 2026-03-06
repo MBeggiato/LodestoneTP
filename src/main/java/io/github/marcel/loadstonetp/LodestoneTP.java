@@ -19,6 +19,10 @@ public class LodestoneTP extends JavaPlugin {
     private WarmupManager warmupManager;
     private LodestoneInteractListener lodestoneInteractListener;
 
+    private String pluginVersion() {
+        return getPluginMeta().getVersion();
+    }
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
@@ -51,7 +55,7 @@ public class LodestoneTP extends JavaPlugin {
         getServer().getPluginManager().registerEvents(lodestoneInteractListener, this);
         getServer().getPluginManager().registerEvents(warmupManager, this);
         getLogger().info("╔════════════════════════════════════════╗");
-        getLogger().info("║     LodestoneTP v" + getDescription().getVersion() + " loaded!           ║");
+        getLogger().info("║     LodestoneTP v" + pluginVersion() + " loaded!           ║");
         getLogger().info("║  Teleporter Network Plugin for Paper  ║");
         getLogger().info("╚════════════════════════════════════════╝");
     }
@@ -68,7 +72,7 @@ public class LodestoneTP extends JavaPlugin {
         if (databaseManager != null) {
             databaseManager.close();
         }
-        getLogger().info("LodestoneTP v" + getDescription().getVersion() + " has been disabled!");
+        getLogger().info("LodestoneTP v" + pluginVersion() + " has been disabled!");
     }
 
     public CooldownManager getCooldownManager() {

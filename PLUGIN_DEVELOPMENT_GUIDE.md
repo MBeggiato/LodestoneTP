@@ -43,7 +43,7 @@ tasks.jar {
 
 ## 📦 Paket-Struktur
 
-```
+````text
 io.github.username.pluginname/
 ├── PluginName.java                 # Main Plugin Class
 ├── commands/                        # Brigadier/CommandMap commands
@@ -53,7 +53,7 @@ io.github.username.pluginname/
 ├── dialogs/                        # Paper Dialog API UI
 ├── managers/                       # Business Logic Manager Classes
 └── utils/                          # Utility Classes
-```
+```java
 
 **Wichtig:**
 
@@ -80,7 +80,7 @@ public class teleporter_manager { }
 public class TeleporterManagerImpl { }
 public void handle(Player p) { }
 private int cooldownSeconds; // Sollte constant sein
-```
+````
 
 ### Imports
 
@@ -542,7 +542,7 @@ src/main/resources/
 
 ## ✅ Final Checklist für jeden Release
 
-```
+```text
 Code Quality:
 ☐ Keine Compiler Warnings (außer deprecated APIs)
 ☐ JAR erfolgreich gepackt
@@ -570,6 +570,6 @@ Deployment:
 
 ---
 
-**Happy coding! 🚀**
+## Happy coding! 🚀
 
 Diese Principles haben sich bei LodestoneTP bewährt und sollten auch für zukünftige Plugins gelten.
