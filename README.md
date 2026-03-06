@@ -1,6 +1,6 @@
 # LodestoneTP
 
-![Version](https://img.shields.io/badge/Minecraft-1.21.11-blue) [![Release](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml/badge.svg)](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml) [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/9UUzdjpVPC)
+![Version](https://img.shields.io/badge/Minecraft-1.21.x-blue) [![Release](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml/badge.svg)](https://github.com/MBeggiato/LodestoneTP/actions/workflows/release.yml) [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/9UUzdjpVPC)
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and notable changes.
 
