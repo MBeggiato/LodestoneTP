@@ -12,6 +12,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public class LodestoneTP extends JavaPlugin {
 
+    private static final String BANNER_BORDER = "╔════════════════════════════════════════╗";
+    private static final int BANNER_INNER_WIDTH = BANNER_BORDER.length() - 2;
+
     private DatabaseManager databaseManager;
     private CooldownManager cooldownManager;
     private AdvancementManager advancementManager;
@@ -21,6 +24,13 @@ public class LodestoneTP extends JavaPlugin {
 
     private String pluginVersion() {
         return getPluginMeta().getVersion();
+    }
+
+    private String bannerLine(String content) {
+        int padding = Math.max(0, BANNER_INNER_WIDTH - content.length());
+        int leftPadding = padding / 2;
+        int rightPadding = padding - leftPadding;
+        return "║" + " ".repeat(leftPadding) + content + " ".repeat(rightPadding) + "║";
     }
 
     @Override
@@ -54,10 +64,10 @@ public class LodestoneTP extends JavaPlugin {
         lodestoneInteractListener = new LodestoneInteractListener(databaseManager, this);
         getServer().getPluginManager().registerEvents(lodestoneInteractListener, this);
         getServer().getPluginManager().registerEvents(warmupManager, this);
-        getLogger().info("╔════════════════════════════════════════╗");
-        getLogger().info("║     LodestoneTP v" + pluginVersion() + " loaded!           ║");
-        getLogger().info("║  Teleporter Network Plugin for Paper  ║");
-        getLogger().info("╚════════════════════════════════════════╝");
+        getLogger().info(BANNER_BORDER);
+        getLogger().info(bannerLine("LodestoneTP v" + pluginVersion() + " loaded!"));
+        getLogger().info(bannerLine("Teleporter Network Plugin for Paper"));
+        getLogger().info(BANNER_BORDER.replace('╔', '╚').replace('╗', '╝'));
     }
 
     @Override

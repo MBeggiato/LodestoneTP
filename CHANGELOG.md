@@ -4,11 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning in a pragmatic form.
 
-## [Unreleased]
+## [1.1.1] - 2026-03-06
 
-### Added
+### Changed
 
-- Placeholder for upcoming changes.
+- Slimmed down the main README and moved configuration and permission documentation into separate files.
+- Improved the README with updated screenshots and clearer in-game usage descriptions.
+- Simplified the structure hologram preview so it only shows the missing block preview without extra floating text.
+- Centered and cleaned up the startup banner output in the server console.
+- Updated the plugin version to `1.1.1` for this patch release.
 
 ## [1.1] - 2026-03-06
 
