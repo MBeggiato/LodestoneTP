@@ -4,9 +4,9 @@
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and notable changes.
 
-![Logo](media/logo.png)
-
 _A Paper 1.21.11+ plugin that turns Lodestone blocks into a teleporter network using Minecraft's native Dialog UI._
+
+![Teleporter Structure](media/export-v9-04f9.gif)
 
 ## What Is LodestoneTP?
 
@@ -47,7 +47,7 @@ The plugin is **zero-config** — just drop the jar, restart, and start building
 
 _Build a **multiblock structure** to create a teleporter:_
 
-![Teleporter Structure](media/export-v9-04f9.gif)
+
 
 ```text
 [Polished Blackstone Bricks]  ← top
